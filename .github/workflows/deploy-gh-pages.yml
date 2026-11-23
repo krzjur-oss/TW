@@ -26,13 +26,15 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - name: Skonfiguruj Bun
+        uses: oven-sh/setup-bun@v2
 
       - name: Zainstaluj zależności
-        run: npm ci
+        run: bun install
 
       - name: Zbuduj aplikację PWA
-        run: npm run build
+        run: bun run build
 
       - name: Przygotuj artefakt GitHub Pages
         uses: actions/upload-pages-artifact@v3
