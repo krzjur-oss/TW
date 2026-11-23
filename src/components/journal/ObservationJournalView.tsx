@@ -9,6 +9,7 @@ import {
 } from '../../types/domain';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { TestDataStamp } from '../TestDataStamp';
+import { useRegisterUnsavedChanges } from '../../utils/unsavedChangesRegistry';
 
 interface ObservationJournalViewProps {
   student: StudentProfile;
@@ -48,6 +49,19 @@ export const ObservationJournalView: React.FC<ObservationJournalViewProps> = ({
   const [conclusions, setConclusions] = useState('');
   const [content, setContent] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const hasUnsavedDraft =
+    showForm &&
+    (title.trim() !== '' ||
+      content.trim() !== '' ||
+      whatWorked.trim() !== '' ||
+      barriersObserved.trim() !== '' ||
+      conclusions.trim() !== '');
+  useRegisterUnsavedChanges(
+    'journal-entry-form',
+    hasUnsavedDraft,
+    'Wpis w dzienniku obserwacji',
+  );
 
   const openNewForm = () => {
     setEditingEntry(null);

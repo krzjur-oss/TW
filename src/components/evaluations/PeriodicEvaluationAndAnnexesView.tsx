@@ -25,6 +25,7 @@ import {
 } from '../../types/domain';
 import { ConfirmDialog } from '../ConfirmDialog';
 import { TestDataStamp } from '../TestDataStamp';
+import { useRegisterUnsavedChanges } from '../../utils/unsavedChangesRegistry';
 
 interface PeriodicEvaluationAndAnnexesViewProps {
   student: StudentProfile;
@@ -102,6 +103,20 @@ export const PeriodicEvaluationAndAnnexesView: React.FC<
   const [annexDescription, setAnnexDescription] = useState('');
   const [annexParentDate, setAnnexParentDate] = useState('');
   const [annexError, setAnnexError] = useState<string | null>(null);
+
+  const hasUnsavedDraft =
+    (showEvalForm &&
+      (progressSummary.trim() !== '' ||
+        modificationsNeeded.trim() !== '' ||
+        noChangeJustification.trim() !== '' ||
+        goalsReferenceNotes.trim() !== '')) ||
+    (showAnnexForm &&
+      (annexTitle.trim() !== '' || annexDescription.trim() !== ''));
+  useRegisterUnsavedChanges(
+    'evaluation-annex-form',
+    hasUnsavedDraft,
+    'Ocena okresowa / Aneks',
+  );
 
   // Podsumowanie cyklu min. 2 ocen w roku szkolnym
   const cycleStats = useMemo(() => {

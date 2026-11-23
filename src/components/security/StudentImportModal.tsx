@@ -5,6 +5,7 @@ import {
   Eye,
   EyeOff,
   FileUp,
+  Info,
   KeyRound,
   LockOpen,
   UserCheck,
@@ -16,11 +17,15 @@ import {
   type SingleStudentBundle,
 } from '../../crypto/cryptoService';
 import {
+  analyzeSingleStudentImport,
   findMatchingStudentForImport,
   importStudentBundle,
+  type SingleStudentImportAnalysis,
   type StudentImportStrategy,
+  type StudentMergeDuplicatePolicy,
 } from '../../db/database';
 import { DOCUMENT_TYPE_LABELS, type StudentProfile } from '../../types/domain';
+import { MAX_ARCHIVE_BYTES } from '../../validation/bundleValidation';
 
 interface StudentImportModalProps {
   open: boolean;
@@ -48,8 +53,12 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
   const [existingMatch, setExistingMatch] = useState<StudentProfile | null>(
     null,
   );
+  const [analysis, setAnalysis] =
+    useState<SingleStudentImportAnalysis | null>(null);
   const [strategy, setStrategy] =
     useState<StudentImportStrategy>('CREATE_NEW');
+  const [duplicatePolicy, setDuplicatePolicy] =
+    useState<StudentMergeDuplicatePolicy>('UPDATE_MATCHING');
 
   useEffect(() => {
     if (open) {
@@ -62,7 +71,9 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
       setError(null);
       setDecryptedBundle(null);
       setExistingMatch(null);
+      setAnalysis(null);
       setStrategy('CREATE_NEW');
+      setDuplicatePolicy('UPDATE_MATCHING');
     }
   }, [open]);
 
@@ -73,6 +84,7 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
     setError(null);
     setDecryptedBundle(null);
     setExistingMatch(null);
+    setAnalysis(null);
 
     if (!file) {
       setFileName('');
@@ -80,7 +92,7 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
       return;
     }
 
-    if (file.size > 25 * 1024 * 1024) {
+    if (file.size > MAX_ARCHIVE_BYTES) {
       setError('Plik przekracza maksymalny bezpieczny rozmiar (25 MB).');
       return;
     }
@@ -111,14 +123,20 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
         'SINGLE_STUDENT',
       );
       const match = await findMatchingStudentForImport(payload.student);
+      const importAnalysis = await analyzeSingleStudentImport(
+        payload,
+        match?.id,
+      );
       setDecryptedBundle(payload);
       setExistingMatch(match);
+      setAnalysis(importAnalysis);
       setStrategy(match ? 'MERGE_EXISTING' : 'CREATE_NEW');
+      setDuplicatePolicy('UPDATE_MATCHING');
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : 'Nie udało się odszyfrować pliku .ipet.',
+          : 'Nie udało się odszyfrować lub zweryfikować pliku .ipet.',
       );
     } finally {
       setDecrypting(false);
@@ -134,6 +152,7 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
         decryptedBundle,
         existingMatch ? strategy : 'CREATE_NEW',
         existingMatch?.id,
+        duplicatePolicy,
       );
       await onImported(saved.id);
       onClose();
@@ -150,12 +169,12 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 print:hidden"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 overflow-y-auto print:hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="student-import-title"
     >
-      <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+      <div className="my-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
@@ -169,7 +188,7 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
                 Import zaszyfrowanej teczki ucznia (.ipet)
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                Odszyfrowanie odbywa się w 100% lokalnie w pamięci przeglądarki
+                Odszyfrowanie i walidacja spójności odbywają się w 100% lokalnie
               </p>
             </div>
           </div>
@@ -184,7 +203,7 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="max-h-[82vh] overflow-y-auto p-6 space-y-5">
           {!decryptedBundle ? (
             <form onSubmit={handleDecrypt} className="space-y-4">
               <div>
@@ -269,7 +288,7 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
               <div className="rounded-lg border border-teal-200 bg-teal-50/70 p-4 dark:border-teal-800 dark:bg-teal-950/30 space-y-2">
                 <div className="flex items-center gap-2 text-xs font-semibold text-teal-900 dark:text-teal-200">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>Plik odszyfrowany poprawnie</span>
+                  <span>Plik odszyfrowany i zweryfikowany poprawnie</span>
                 </div>
                 <div className="text-sm font-bold text-slate-900 dark:text-slate-100">
                   {decryptedBundle.student.firstName}{' '}
@@ -305,6 +324,19 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
                 </div>
               </div>
 
+              {analysis && analysis.totalCrossStudentCollisions > 0 && (
+                <div className="flex items-start gap-2 rounded-lg border border-blue-200 bg-blue-50/70 px-3.5 py-2.5 text-xs text-blue-950 dark:border-blue-800 dark:bg-blue-950/30 dark:text-blue-100">
+                  <Info className="mt-0.5 h-4 w-4 shrink-0 text-blue-700 dark:text-blue-300" />
+                  <span>
+                    Wykryto <strong>{analysis.totalCrossStudentCollisions}</strong>{' '}
+                    rekordów podrzędnych o identyfikatorach występujących już w bazie
+                    u innych uczniów. Podczas importu otrzymają one automatycznie
+                    nowe bezpieczne identyfikatory UUID, bez naruszania danych
+                    innych uczniów.
+                  </span>
+                </div>
+              )}
+
               {existingMatch && (
                 <div className="rounded-lg border border-amber-300 bg-amber-50/70 p-4 dark:border-amber-800 dark:bg-amber-950/30 space-y-3">
                   <div className="flex items-start gap-2 text-xs text-amber-950 dark:text-amber-100">
@@ -316,6 +348,29 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
                       Wybierz sposób zapisu:
                     </div>
                   </div>
+
+                  {analysis && (
+                    <div className="grid grid-cols-3 gap-2 rounded-md border border-amber-200 bg-white/70 p-2.5 text-[11px] text-slate-700 dark:border-amber-900/60 dark:bg-slate-950/60 dark:text-slate-300 tabular-nums">
+                      <div>
+                        Nowe rekordy:{' '}
+                        <strong className="font-mono text-slate-900 dark:text-slate-100">
+                          {analysis.totalNew}
+                        </strong>
+                      </div>
+                      <div>
+                        Identyczne:{' '}
+                        <strong className="font-mono text-slate-900 dark:text-slate-100">
+                          {analysis.totalIdentical}
+                        </strong>
+                      </div>
+                      <div>
+                        Zmodyfikowane:{' '}
+                        <strong className="font-mono text-slate-900 dark:text-slate-100">
+                          {analysis.totalConflicts}
+                        </strong>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-2">
                     <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-xs cursor-pointer dark:border-slate-700 dark:bg-slate-950">
@@ -332,11 +387,66 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
                           <span>Zaktualizuj / scal dane z istniejącym rekordem</span>
                         </div>
                         <p className="mt-0.5 text-slate-600 dark:text-slate-400">
-                          Zaktualizuje kartę ucznia oraz doda brakujące wpisy
-                          dziennika, oceny i aneksy pod obecnym identyfikatorem.
+                          Zaktualizuje kartę ucznia i doda nowe wpisy pod
+                          obecnym identyfikatorem ucznia, z ochroną przed
+                          powielaniem identycznych wpisów.
                         </p>
                       </div>
                     </label>
+
+                    {strategy === 'MERGE_EXISTING' &&
+                      analysis &&
+                      (analysis.totalIdentical > 0 ||
+                        analysis.totalConflicts > 0) && (
+                        <div className="ml-4 space-y-1.5 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-700 dark:bg-slate-900/80">
+                          <div className="font-semibold text-slate-800 dark:text-slate-200">
+                            Zachowanie dla powtarzających się lub zmienionych wpisów:
+                          </div>
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="duplicate-policy"
+                              checked={duplicatePolicy === 'UPDATE_MATCHING'}
+                              onChange={() =>
+                                setDuplicatePolicy('UPDATE_MATCHING')
+                              }
+                              className="mt-0.5"
+                            />
+                            <span className="text-slate-700 dark:text-slate-300">
+                              <strong>Aktualizuj zmienione i pomiń identyczne</strong>{' '}
+                              (zalecane przy ponownym imporcie tego samego ucznia)
+                            </span>
+                          </label>
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="duplicate-policy"
+                              checked={duplicatePolicy === 'KEEP_EXISTING'}
+                              onChange={() =>
+                                setDuplicatePolicy('KEEP_EXISTING')
+                              }
+                              className="mt-0.5"
+                            />
+                            <span className="text-slate-700 dark:text-slate-300">
+                              <strong>Zachowaj istniejące lokalne</strong> i dopisz
+                              tylko brakujące nowe wpisy
+                            </span>
+                          </label>
+                          <label className="flex items-start gap-2 cursor-pointer">
+                            <input
+                              type="radio"
+                              name="duplicate-policy"
+                              checked={duplicatePolicy === 'ADD_AS_NEW'}
+                              onChange={() => setDuplicatePolicy('ADD_AS_NEW')}
+                              className="mt-0.5"
+                            />
+                            <span className="text-slate-700 dark:text-slate-300">
+                              <strong>Dodaj wszystkie z pliku jako nowe kopie</strong>{' '}
+                              (z nowymi identyfikatorami UUID)
+                            </span>
+                          </label>
+                        </div>
+                      )}
 
                     <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-white p-3 text-xs cursor-pointer dark:border-slate-700 dark:bg-slate-950">
                       <input
@@ -352,8 +462,9 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
                           <span>Utwórz osobny rekord (nowa teczka)</span>
                         </div>
                         <p className="mt-0.5 text-slate-600 dark:text-slate-400">
-                          Zapisze zaimportowanego ucznia jako niezależną teczkę z
-                          nowym identyfikatorem, bez nadpisywania istniejącej.
+                          Zapisze zaimportowanego ucznia oraz wszystkie jego wpisy
+                          pod całkowicie nowymi identyfikatorami UUID, bez
+                          modyfikowania istniejącej teczki.
                         </p>
                       </div>
                     </label>
@@ -373,28 +484,38 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
                   onClick={() => {
                     setDecryptedBundle(null);
                     setExistingMatch(null);
+                    setAnalysis(null);
                     setError(null);
                   }}
                   className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   Wróć do wyboru pliku
                 </button>
-                <button
-                  type="button"
-                  disabled={importing}
-                  onClick={handleConfirmImport}
-                  className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-800 disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-500"
-                >
-                  <span>
-                    {importing
-                      ? 'Zapisywanie w bazie...'
-                      : existingMatch
-                        ? strategy === 'MERGE_EXISTING'
-                          ? 'Scal i zapisz w bazie'
-                          : 'Utwórz osobną teczkę'
-                        : 'Zapisz ucznia w bazie'}
-                  </span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Anuluj
+                  </button>
+                  <button
+                    type="button"
+                    disabled={importing}
+                    onClick={handleConfirmImport}
+                    className="inline-flex items-center gap-2 rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white transition-colors hover:bg-blue-800 disabled:opacity-60 dark:bg-blue-600 dark:hover:bg-blue-500"
+                  >
+                    <span>
+                      {importing
+                        ? 'Zapisywanie w bazie...'
+                        : existingMatch
+                          ? strategy === 'MERGE_EXISTING'
+                            ? 'Scal i zapisz w bazie'
+                            : 'Utwórz osobną teczkę'
+                          : 'Zapisz ucznia w bazie'}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
           )}

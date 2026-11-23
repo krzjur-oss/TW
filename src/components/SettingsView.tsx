@@ -25,10 +25,17 @@ import {
   type FacilitySettings,
   type ThemeMode,
 } from '../types/domain';
+import {
+  getRemainingLockSeconds,
+  readLockThrottleState,
+  recordFailedLockAttempt,
+  resetLockThrottleState,
+} from '../utils/appLockThrottle';
 import { PWAInstallButton } from './PWAInstallButton';
 import { TestDataStamp } from './TestDataStamp';
 import { EncryptedExportModal } from './security/EncryptedExportModal';
 import { FullBackupRestoreModal } from './security/FullBackupRestoreModal';
+import { useRegisterUnsavedChanges } from '../utils/unsavedChangesRegistry';
 
 interface SettingsViewProps {
   settings: FacilitySettings;
@@ -96,6 +103,23 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     }
   }, [settings]);
 
+  const hasUnsavedSettings =
+    schoolName !== settings.schoolName ||
+    schoolType !== settings.schoolType ||
+    address !== (settings.address ?? '') ||
+    city !== settings.city ||
+    directorName !== settings.directorName ||
+    defaultSchoolYear !== settings.defaultSchoolYear ||
+    defaultTeamRole !== settings.defaultTeamRole ||
+    currentSecret !== '' ||
+    newSecret !== '' ||
+    confirmSecret !== '';
+  useRegisterUnsavedChanges(
+    'settings-form',
+    hasUnsavedSettings,
+    'Ustawienia placówki',
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     await onSaveSettings({
@@ -145,14 +169,32 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setLockSuccess(null);
 
     if (lockEnabled && settings.appLock) {
+      const nowMs = Date.now();
+      const throttle = readLockThrottleState(nowMs);
+      const waitSec = getRemainingLockSeconds(throttle, nowMs);
+      if (waitSec > 0) {
+        setLockError(
+          `Zbyt wiele błędnych prób weryfikacji obecnego PIN-u/hasła. Odczekaj ${waitSec} s.`,
+        );
+        return;
+      }
+
       const validCurrent = await verifyAppLockSecret(
         currentSecret,
         settings.appLock,
       );
       if (!validCurrent) {
-        setLockError('Obecny kod PIN lub hasło jest nieprawidłowe.');
+        const failNow = Date.now();
+        const nextThrottle = recordFailedLockAttempt(failNow);
+        const cooldownSec = getRemainingLockSeconds(nextThrottle, failNow);
+        setLockError(
+          cooldownSec > 0
+            ? `Obecny PIN lub hasło jest nieprawidłowe. Odczekaj ${cooldownSec} s przed kolejną próbą.`
+            : 'Obecny kod PIN lub hasło jest nieprawidłowe.',
+        );
         return;
       }
+      resetLockThrottleState();
     }
 
     const validationErr = validateNewSecret(lockMode, newSecret);
@@ -169,13 +211,14 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const nextLock = await createAppLockConfig(lockMode, newSecret);
       await onSaveSettings({ appLock: nextLock });
+      resetLockThrottleState();
       setCurrentSecret('');
       setNewSecret('');
       setConfirmSecret('');
       setLockSuccess(
         lockEnabled
-          ? 'Zaktualizowano lokalną blokadę aplikacji.'
-          : 'Włączono lokalną blokadę ekranu aplikacji.',
+          ? 'Zaktualizowano lokalną blokadę interfejsu aplikacji.'
+          : 'Włączono lokalną blokadę ekranu interfejsu aplikacji.',
       );
     } catch (err) {
       setLockError(
@@ -191,9 +234,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     setLockError(null);
     setLockSuccess(null);
 
+    const nowMs = Date.now();
+    const throttle = readLockThrottleState(nowMs);
+    const waitSec = getRemainingLockSeconds(throttle, nowMs);
+    if (waitSec > 0) {
+      setLockError(
+        `Zbyt wiele błędnych prób weryfikacji obecnego PIN-u/hasła. Odczekaj ${waitSec} s.`,
+      );
+      return;
+    }
+
     if (!currentSecret) {
       setLockError(
-        'Podaj obecny PIN lub hasło, aby wyłączyć blokadę aplikacji.',
+        'Podaj obecny PIN lub hasło, aby wyłączyć blokadę interfejsu.',
       );
       return;
     }
@@ -202,14 +255,22 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     try {
       const valid = await verifyAppLockSecret(currentSecret, settings.appLock);
       if (!valid) {
-        setLockError('Obecny kod PIN lub hasło jest nieprawidłowe.');
+        const failNow = Date.now();
+        const nextThrottle = recordFailedLockAttempt(failNow);
+        const cooldownSec = getRemainingLockSeconds(nextThrottle, failNow);
+        setLockError(
+          cooldownSec > 0
+            ? `Obecny PIN lub hasło jest nieprawidłowe. Odczekaj ${cooldownSec} s przed kolejną próbą.`
+            : 'Obecny kod PIN lub hasło jest nieprawidłowe.',
+        );
         return;
       }
+      resetLockThrottleState();
       await onSaveSettings({ appLock: undefined });
       setCurrentSecret('');
       setNewSecret('');
       setConfirmSecret('');
-      setLockSuccess('Wyłączono lokalną blokadę ekranu aplikacji.');
+      setLockSuccess('Wyłączono lokalną blokadę interfejsu aplikacji.');
     } finally {
       setLockBusy(false);
     }
@@ -389,15 +450,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
               <div>
                 <h3 className="text-base font-semibold text-slate-900 dark:text-slate-100">
-                  Blokada ekranu aplikacji (PIN / hasło)
+                  Blokada ekranu interfejsu (PIN / hasło)
                 </h3>
                 <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
                   Stan:{' '}
                   <strong className="text-slate-800 dark:text-slate-200">
                     {lockEnabled
                       ? settings.appLock?.mode === 'PIN'
-                        ? 'Aktywna (kod PIN)'
-                        : 'Aktywna (hasło)'
+                        ? 'Aktywna (kod PIN — blokada UI)'
+                        : 'Aktywna (hasło — blokada UI)'
                       : 'Wyłączona'}
                   </strong>
                 </p>
@@ -416,10 +477,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             )}
           </div>
 
-          <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs leading-relaxed text-amber-950 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-100">
-            PIN i hasło są haszowane lokalnie (<strong>Web Crypto PBKDF2 z solą</strong>)
-            i przechowywane wyłącznie w tym urządzeniu. Nie istnieje żaden
-            system odzyskiwania hasła w chmurze ani reset e-mailem.
+          <div className="rounded-lg border border-amber-200 bg-amber-50/70 p-3.5 text-xs leading-relaxed text-amber-950 dark:border-amber-800/70 dark:bg-amber-950/30 dark:text-amber-100 space-y-1.5">
+            <p>
+              <strong>Realny zakres ochrony:</strong> ta funkcja jest wyłącznie{' '}
+              <strong>blokadą dostępu do interfejsu (ekranu)</strong> — nie
+              szyfruje rekordów zapisanych w lokalnej bazie{' '}
+              <code className="font-mono">IndexedDB</code> w spoczynku. Osoba
+              mająca dostęp do profilu przeglądarki lub narzędzi deweloperskich
+              na tym koncie może odczytać dane poza interfejsem.
+            </p>
+            <p>
+              <strong>Szyfrowanie plików vs blokada UI:</strong> rzeczywiste
+              szyfrowanie kryptograficzne (<strong>AES-GCM 256-bit</strong> +
+              PBKDF2) chroni eksportowane pliki <code className="font-mono">.ipet</code>{' '}
+              oraz pełny backup. Przy pracy z danymi rzeczywistymi uczniów{' '}
+              <strong>zalecamy mocne hasło tekstowe</strong> zamiast krótkiego
+              kodu PIN, włączenie <strong>szyfrowania całego dysku urządzenia</strong>{' '}
+              (BitLocker / FileVault / LUKS / Android) oraz korzystanie z
+              indywidualnego, chronionego hasłem konta systemowego.
+            </p>
+            <p>
+              Skrót PIN-u/hasła (Web Crypto PBKDF2 z solą) przechowywany jest
+              wyłącznie lokalnie, z czasowym ograniczaniem błędnych prób. Brak
+              odzyskiwania w chmurze ani resetu e-mailem.
+            </p>
           </div>
 
           <form onSubmit={handleSaveLock} className="space-y-4">
@@ -458,7 +539,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       : 'text-slate-600 dark:text-slate-300'
                   }`}
                 >
-                  Hasło tekstowe (min. 6 znaków)
+                  Hasło tekstowe (min. 6 znaków — zalecane)
                 </button>
               </div>
             </div>

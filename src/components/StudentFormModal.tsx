@@ -12,6 +12,7 @@ import {
   type StudentProfile,
   type StudentStatus,
 } from '../types/domain';
+import { useRegisterUnsavedChanges } from '../utils/unsavedChangesRegistry';
 
 interface StudentFormModalProps {
   open: boolean;
@@ -104,6 +105,16 @@ export const StudentFormModal: React.FC<StudentFormModalProps> = ({
       setSaving(false);
     }
   }, [open, initialStudent, defaultSchoolYear]);
+
+  const initialSerialized = JSON.stringify(
+    buildInitialState(initialStudent, defaultSchoolYear),
+  );
+  const isDirty = open && JSON.stringify(form) !== initialSerialized;
+  useRegisterUnsavedChanges(
+    'student-form-modal',
+    isDirty,
+    'Formularz danych ucznia',
+  );
 
   if (!open) return null;
 

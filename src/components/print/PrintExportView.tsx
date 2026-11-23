@@ -7,6 +7,7 @@ import {
   Printer,
   ScrollText,
 } from 'lucide-react';
+import { LEGAL_FRAMEWORK_AS_OF_PL } from '../../config/appInfo';
 import {
   formatFacilityLocation,
   generateAndDownloadPdf,
@@ -1293,6 +1294,12 @@ export const PrintExportView: React.FC<PrintExportViewProps> = ({
                 </div>
               </div>
             </div>
+          </div>
+          <div className="border-t border-slate-200 pt-2 text-[10px] leading-snug text-slate-500">
+            Wzór pomocniczy (stan prawny opracowania na dzień{' '}
+            {LEGAL_FRAMEWORK_AS_OF_PL}). Zatwierdzenie treści oraz weryfikacja
+            zgodności z aktualnymi przepisami i procedurami placówki należą do
+            zespołu oraz dyrektora szkoły.
           </div>
         </footer>
       </div>

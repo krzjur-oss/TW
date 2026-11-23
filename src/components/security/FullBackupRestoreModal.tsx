@@ -5,6 +5,7 @@ import {
   DatabaseBackup,
   Eye,
   EyeOff,
+  Info,
   KeyRound,
   LockOpen,
   X,
@@ -14,9 +15,13 @@ import {
   type FullDatabaseBundle,
 } from '../../crypto/cryptoService';
 import {
+  analyzeFullDatabaseImport,
   importFullDatabaseBundle,
+  type FullBackupConflictResolution,
   type FullBackupRestoreMode,
+  type FullDatabaseImportAnalysis,
 } from '../../db/database';
+import { MAX_ARCHIVE_BYTES } from '../../validation/bundleValidation';
 
 interface FullBackupRestoreModalProps {
   open: boolean;
@@ -38,8 +43,14 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bundle, setBundle] = useState<FullDatabaseBundle | null>(null);
+  const [analysis, setAnalysis] =
+    useState<FullDatabaseImportAnalysis | null>(null);
   const [restoreMode, setRestoreMode] =
     useState<FullBackupRestoreMode>('MERGE');
+  const [conflictResolution, setConflictResolution] =
+    useState<FullBackupConflictResolution>('KEEP_LOCAL');
+  const [applyFacilitySettings, setApplyFacilitySettings] = useState(false);
+  const [replaceConfirmed, setReplaceConfirmed] = useState(false);
 
   useEffect(() => {
     if (open) {
@@ -51,7 +62,11 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
       setRestoring(false);
       setError(null);
       setBundle(null);
+      setAnalysis(null);
       setRestoreMode('MERGE');
+      setConflictResolution('KEEP_LOCAL');
+      setApplyFacilitySettings(false);
+      setReplaceConfirmed(false);
     }
   }, [open]);
 
@@ -61,6 +76,8 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
     const file = e.target.files?.[0];
     setError(null);
     setBundle(null);
+    setAnalysis(null);
+    setReplaceConfirmed(false);
 
     if (!file) {
       setFileName('');
@@ -68,7 +85,7 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
       return;
     }
 
-    if (file.size > 25 * 1024 * 1024) {
+    if (file.size > MAX_ARCHIVE_BYTES) {
       setError('Plik kopii przekracza maksymalny bezpieczny rozmiar (25 MB).');
       return;
     }
@@ -97,12 +114,20 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
         password,
         'FULL_DATABASE',
       );
+      const importAnalysis = await analyzeFullDatabaseImport(payload);
       setBundle(payload);
+      setAnalysis(importAnalysis);
+      setRestoreMode('MERGE');
+      setConflictResolution('KEEP_LOCAL');
+      setApplyFacilitySettings(
+        importAnalysis.existingDbCounts.studentsCount === 0,
+      );
+      setReplaceConfirmed(false);
     } catch (err) {
       setError(
         err instanceof Error
           ? err.message
-          : 'Nie udało się odszyfrować pliku kopii zapasowej.',
+          : 'Nie udało się odszyfrować lub zweryfikować pliku kopii zapasowej.',
       );
     } finally {
       setDecrypting(false);
@@ -111,10 +136,20 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
 
   const handleConfirmRestore = async () => {
     if (!bundle) return;
+    if (restoreMode === 'REPLACE' && !replaceConfirmed) {
+      setError(
+        'Zaznacz potwierdzenie, aby zastąpić całą lokalną bazę danych.',
+      );
+      return;
+    }
     setRestoring(true);
     setError(null);
     try {
-      await importFullDatabaseBundle(bundle, restoreMode);
+      await importFullDatabaseBundle(bundle, restoreMode, {
+        conflictResolution,
+        applyFacilitySettings,
+        confirmReplace: replaceConfirmed,
+      });
       await onRestored();
       onClose();
     } catch (err) {
@@ -130,12 +165,12 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 print:hidden"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 overflow-y-auto print:hidden"
       role="dialog"
       aria-modal="true"
       aria-labelledby="full-restore-title"
     >
-      <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+      <div className="my-auto w-full max-w-xl rounded-xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
         <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-4 dark:border-slate-800">
           <div className="flex items-center gap-2.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-50 text-blue-800 dark:bg-blue-950 dark:text-blue-200">
@@ -150,7 +185,7 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 Przywraca profile uczniów, dzienniki, oceny, aneksy oraz
-                ustawienia placówki
+                ustawienia placówki po weryfikacji spójności
               </p>
             </div>
           </div>
@@ -165,7 +200,7 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="max-h-[82vh] overflow-y-auto p-6 space-y-5">
           {!bundle ? (
             <form onSubmit={handleDecrypt} className="space-y-4">
               <div>
@@ -239,7 +274,9 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
                 >
                   <LockOpen className="h-3.5 w-3.5" />
                   <span>
-                    {decrypting ? 'Odszyfrowywanie...' : 'Odszyfruj kopię'}
+                    {decrypting
+                      ? 'Odszyfrowywanie i analiza...'
+                      : 'Odszyfruj i sprawdź kopię'}
                   </span>
                 </button>
               </div>
@@ -249,7 +286,7 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
               <div className="rounded-lg border border-teal-200 bg-teal-50/70 p-4 dark:border-teal-800 dark:bg-teal-950/30 space-y-2.5">
                 <div className="flex items-center gap-2 text-xs font-semibold text-teal-900 dark:text-teal-200">
                   <CheckCircle2 className="h-4 w-4 shrink-0" />
-                  <span>Kopia bazy odszyfrowana poprawnie</span>
+                  <span>Kopia bazy odszyfrowana i zweryfikowana</span>
                 </div>
                 <div className="text-xs text-slate-700 dark:text-slate-300">
                   Placówka w kopii:{' '}
@@ -283,32 +320,152 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
                 </div>
               </div>
 
-              <div className="space-y-2">
+              {analysis && (
+                <div className="rounded-lg border border-slate-200 bg-slate-50 p-3.5 text-xs space-y-2 dark:border-slate-700 dark:bg-slate-950/70">
+                  <div className="font-semibold text-slate-900 dark:text-slate-100">
+                    Analiza porównawcza przed zapisem (tryb scalania):
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px] tabular-nums">
+                    <div className="rounded border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500">Nowe rekordy</div>
+                      <div className="font-mono font-bold text-teal-700 dark:text-teal-300">
+                        {analysis.totalNew}
+                      </div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500">Identyczne</div>
+                      <div className="font-mono font-bold text-slate-700 dark:text-slate-300">
+                        {analysis.totalIdentical}
+                      </div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500">Konflikty treści</div>
+                      <div className="font-mono font-bold text-amber-700 dark:text-amber-300">
+                        {analysis.totalConflicts}
+                      </div>
+                    </div>
+                    <div className="rounded border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-900">
+                      <div className="text-slate-500">Kolizje ID</div>
+                      <div className="font-mono font-bold text-blue-700 dark:text-blue-300">
+                        {analysis.totalCrossCollisions}
+                      </div>
+                    </div>
+                  </div>
+
+                  {analysis.conflictSummaries.length > 0 && (
+                    <ul className="list-disc pl-4 space-y-0.5 text-[11px] text-amber-900 dark:text-amber-200">
+                      {analysis.conflictSummaries.map((msg) => (
+                        <li key={msg}>{msg}</li>
+                      ))}
+                    </ul>
+                  )}
+
+                  {analysis.localHasAppLock && (
+                    <div className="flex items-start gap-1.5 text-[11px] text-slate-600 dark:text-slate-400">
+                      <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-slate-500" />
+                      <span>
+                        Lokalna blokada interfejsu (PIN/hasło) na tym urządzeniu
+                        zostanie zachowana i nie zostanie przejęta z innego
+                        urządzenia.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div className="space-y-2.5">
                 <label className="flex items-start gap-2.5 rounded-lg border border-slate-200 bg-slate-50/70 p-3 text-xs cursor-pointer dark:border-slate-700 dark:bg-slate-950">
                   <input
                     type="radio"
                     name="restore-mode"
                     checked={restoreMode === 'MERGE'}
-                    onChange={() => setRestoreMode('MERGE')}
+                    onChange={() => {
+                      setRestoreMode('MERGE');
+                      setReplaceConfirmed(false);
+                      setError(null);
+                    }}
                     className="mt-0.5"
                   />
                   <div>
                     <div className="font-semibold text-slate-900 dark:text-slate-100">
-                      Scal z obecną bazą (zalecane przy przenoszeniu części danych)
+                      Scal z obecną bazą (bezpieczne łączenie danych)
                     </div>
                     <p className="mt-0.5 text-slate-600 dark:text-slate-400">
-                      Dodaje brakujących uczniów oraz aktualizuje rekordy o tych
-                      samych identyfikatorach, zachowując pozostałe lokalne teczki.
+                      Dopisuje brakujących uczniów i rekordy z ochroną przed
+                      kolizjami identyfikatorów między uczniami.
                     </p>
                   </div>
                 </label>
+
+                {restoreMode === 'MERGE' && analysis && (
+                  <div className="ml-4 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs dark:border-slate-700 dark:bg-slate-900/80">
+                    {analysis.totalConflicts > 0 && (
+                      <div className="space-y-1.5">
+                        <div className="font-semibold text-slate-800 dark:text-slate-200">
+                          Rozstrzyganie wykrytych konfliktów ({analysis.totalConflicts}):
+                        </div>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="merge-conflict-resolution"
+                            checked={conflictResolution === 'KEEP_LOCAL'}
+                            onChange={() => setConflictResolution('KEEP_LOCAL')}
+                            className="mt-0.5"
+                          />
+                          <span className="text-slate-700 dark:text-slate-300">
+                            <strong>Zachowaj lokalne rekordy przy konflikcie</strong>{' '}
+                            (najbezpieczniejsze — dopisuje tylko nowe dane z kopii)
+                          </span>
+                        </label>
+                        <label className="flex items-start gap-2 cursor-pointer">
+                          <input
+                            type="radio"
+                            name="merge-conflict-resolution"
+                            checked={
+                              conflictResolution === 'OVERWRITE_WITH_BACKUP'
+                            }
+                            onChange={() =>
+                              setConflictResolution('OVERWRITE_WITH_BACKUP')
+                            }
+                            className="mt-0.5"
+                          />
+                          <span className="text-slate-700 dark:text-slate-300">
+                            <strong>Nadpisz zmienione rekordy wersją z kopii</strong>{' '}
+                            (zawsze zachowuje ochronę przed kolizjami innych uczniów)
+                          </span>
+                        </label>
+                      </div>
+                    )}
+
+                    {analysis.facilitySettingsChanged && (
+                      <label className="flex items-start gap-2 cursor-pointer pt-1">
+                        <input
+                          type="checkbox"
+                          checked={applyFacilitySettings}
+                          onChange={(e) =>
+                            setApplyFacilitySettings(e.target.checked)
+                          }
+                          className="mt-0.5"
+                        />
+                        <span className="text-slate-700 dark:text-slate-300">
+                          Zastosuj także ustawienia placówki z kopii (nazwa
+                          szkoły, adres, dyrektor — bez zmiany lokalnej blokady
+                          ekranu)
+                        </span>
+                      </label>
+                    )}
+                  </div>
+                )}
 
                 <label className="flex items-start gap-2.5 rounded-lg border border-red-200 bg-red-50/50 p-3 text-xs cursor-pointer dark:border-red-900/60 dark:bg-red-950/20">
                   <input
                     type="radio"
                     name="restore-mode"
                     checked={restoreMode === 'REPLACE'}
-                    onChange={() => setRestoreMode('REPLACE')}
+                    onChange={() => {
+                      setRestoreMode('REPLACE');
+                      setError(null);
+                    }}
                     className="mt-0.5"
                   />
                   <div>
@@ -316,12 +473,33 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
                       Zastąp całą obecną bazę (pełne odtworzenie stanu z kopii)
                     </div>
                     <p className="mt-0.5 text-red-800/90 dark:text-red-300/90">
-                      Usuwa obecnych uczniów, dzienniki, oceny i aneksy na tym
-                      urządzeniu, a następnie wczytuje dokładnie zawartość pliku
-                      backupu.
+                      Trwale usuwa obecnych uczniów (
+                      {analysis?.existingDbCounts.studentsCount ?? 0}),
+                      dzienniki, oceny i aneksy na tym urządzeniu, a następnie
+                      atomowo wczytuje zawartość kopii (z zachowaniem lokalnej
+                      blokady ekranu).
                     </p>
                   </div>
                 </label>
+
+                {restoreMode === 'REPLACE' && (
+                  <label className="ml-4 flex items-start gap-2 rounded-lg border border-red-300 bg-red-50 p-3 text-xs font-medium text-red-950 cursor-pointer dark:border-red-800 dark:bg-red-950/40 dark:text-red-100">
+                    <input
+                      type="checkbox"
+                      checked={replaceConfirmed}
+                      onChange={(e) => {
+                        setReplaceConfirmed(e.target.checked);
+                        setError(null);
+                      }}
+                      className="mt-0.5"
+                    />
+                    <span>
+                      Rozumiem, że wszystkie obecne dane uczniów na tym
+                      urządzeniu zostaną całkowicie zastąpione zawartością tego
+                      pliku kopii zapasowej.
+                    </span>
+                  </label>
+                )}
               </div>
 
               {error && (
@@ -335,28 +513,42 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
                   type="button"
                   onClick={() => {
                     setBundle(null);
+                    setAnalysis(null);
+                    setReplaceConfirmed(false);
                     setError(null);
                   }}
                   className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
                 >
                   Wróć
                 </button>
-                <button
-                  type="button"
-                  disabled={restoring}
-                  onClick={handleConfirmRestore}
-                  className={`rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors disabled:opacity-60 ${
-                    restoreMode === 'REPLACE'
-                      ? 'bg-red-700 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-500'
-                      : 'bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500'
-                  }`}
-                >
-                  {restoring
-                    ? 'Odtwarzanie...'
-                    : restoreMode === 'REPLACE'
-                      ? 'Zastąp bazę i przywróć kopię'
-                      : 'Scal dane z kopią'}
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={onClose}
+                    className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 dark:hover:bg-slate-800"
+                  >
+                    Anuluj bez zmian
+                  </button>
+                  <button
+                    type="button"
+                    disabled={
+                      restoring ||
+                      (restoreMode === 'REPLACE' && !replaceConfirmed)
+                    }
+                    onClick={handleConfirmRestore}
+                    className={`rounded-lg px-4 py-2 text-xs font-semibold text-white transition-colors disabled:opacity-60 ${
+                      restoreMode === 'REPLACE'
+                        ? 'bg-red-700 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-500'
+                        : 'bg-blue-700 hover:bg-blue-800 dark:bg-blue-600 dark:hover:bg-blue-500'
+                    }`}
+                  >
+                    {restoring
+                      ? 'Odtwarzanie...'
+                      : restoreMode === 'REPLACE'
+                        ? 'Zastąp bazę i przywróć kopię'
+                        : 'Scal dane z kopią'}
+                  </button>
+                </div>
               </div>
             </div>
           )}

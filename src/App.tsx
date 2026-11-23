@@ -39,6 +39,7 @@ import {
 import { AboutAndLegalView } from './components/AboutAndLegalView';
 import { OfflineIndicator } from './components/OfflineIndicator';
 import { PWAInstallButton } from './components/PWAInstallButton';
+import { PWAUpdateBanner } from './components/PWAUpdateBanner';
 import { SettingsView } from './components/SettingsView';
 import { StudentDetailView } from './components/StudentDetailView';
 import { StudentFormModal } from './components/StudentFormModal';
@@ -47,6 +48,7 @@ import { AppLockScreen } from './components/security/AppLockScreen';
 import { StudentImportModal } from './components/security/StudentImportModal';
 import { APP_INFO } from './config/appInfo';
 import type { FacilitySettings, StudentProfile } from './types/domain';
+import { UnsavedChangesWindowGuard } from './utils/unsavedChangesRegistry';
 
 function AppShell() {
   const navigate = useNavigate();
@@ -612,6 +614,7 @@ function AppShell() {
         }}
       />
 
+      <PWAUpdateBanner />
       <OfflineIndicator />
     </div>
   );
@@ -620,6 +623,7 @@ function AppShell() {
 export default function App() {
   return (
     <HashRouter>
+      <UnsavedChangesWindowGuard />
       <AppShell />
     </HashRouter>
   );

@@ -33,6 +33,12 @@ jobs:
       - name: Zainstaluj zależności
         run: bun install
 
+      - name: Sprawdź typy TypeScript (lint)
+        run: bun run lint
+
+      - name: Uruchom testy automatyczne
+        run: bun run test
+
       - name: Zbuduj aplikację PWA
         run: bun run build
 

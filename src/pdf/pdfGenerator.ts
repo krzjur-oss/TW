@@ -7,6 +7,10 @@ import type {
   TVirtualFileSystem,
 } from 'pdfmake/interfaces';
 import {
+  APP_INFO,
+  LEGAL_FRAMEWORK_AS_OF_PL,
+} from '../config/appInfo';
+import {
   DOCUMENT_TYPE_LABELS,
   EDUCATION_STAGE_LABELS,
   EFFECTIVENESS_RATING_LABELS,
@@ -70,9 +74,9 @@ export function formatFacilityLocation(settings: FacilitySettings): string {
 
 export function getLegalBasisText(student: StudentProfile): string {
   if (student.documentType === 'ORZECZENIE') {
-    return 'Rozporządzenie MEN z dnia 9 sierpnia 2017 r. w sprawie warunków organizowania kształcenia, wychowania i opieki dla dzieci i młodzieży niepełnosprawnych, niedostosowanych społecznie i zagrożonych niedostosowaniem społecznym (z późn. zm.)';
+    return `Rozporządzenie MEN z dnia 9 sierpnia 2017 r. w sprawie warunków organizowania kształcenia, wychowania i opieki dla dzieci i młodzieży niepełnosprawnych, niedostosowanych społecznie i zagrożonych niedostosowaniem społecznym (t.j. Dz.U. z 2020 r. poz. 1309, z późn. zm.) oraz art. 127 ustawy z dnia 14 grudnia 2016 r. – Prawo oświatowe (t.j. Dz.U. z 2026 r. poz. 820, z późn. zm.). Stan prawny wzoru: ${LEGAL_FRAMEWORK_AS_OF_PL}.`;
   }
-  return 'Rozporządzenie MEN z dnia 9 sierpnia 2017 r. w sprawie zasad organizacji i udzielania pomocy psychologiczno-pedagogicznej w publicznych przedszkolach, szkołach i placówkach (z późn. zm.)';
+  return `Rozporządzenie MEN z dnia 9 sierpnia 2017 r. w sprawie zasad organizacji i udzielania pomocy psychologiczno-pedagogicznej w publicznych przedszkolach, szkołach i placówkach (t.j. Dz.U. z 2023 r. poz. 1798) oraz § 2–3 rozporządzenia MEN z dnia 22 lutego 2019 r. w sprawie oceniania, klasyfikowania i promowania uczniów i słuchaczy w szkołach publicznych (t.j. Dz.U. z 2023 r. poz. 2572, z późn. zm.). Stan prawny wzoru: ${LEGAL_FRAMEWORK_AS_OF_PL}.`;
 }
 
 const TABLE_BORDER_LAYOUT = {
@@ -1181,10 +1185,9 @@ export function buildPdfFileName(options: PdfGenerationOptions): string {
   return `${prefix}_${slug}_${preparedDate}.pdf`;
 }
 
-export async function generateAndDownloadPdf(
+export function buildPdfDocumentDefinition(
   options: PdfGenerationOptions,
-): Promise<string> {
-  const pm = getPdfMakeInstance();
+): TDocumentDefinitions {
   const { variant, student } = options;
 
   let content: Content[];
@@ -1204,14 +1207,14 @@ export async function generateAndDownloadPdf(
     content = buildVariant3JournalContent(options);
   }
 
-  const docDefinition: TDocumentDefinitions = {
+  return {
     pageSize: 'A4',
     pageOrientation: 'portrait',
-    pageMargins: [38, 36, 38, 42],
+    pageMargins: [38, 36, 38, 46],
     info: {
       title: docTitle,
       author: options.settings.schoolName,
-      subject: 'Dokumentacja wsparcia ucznia',
+      subject: `Dokumentacja wsparcia ucznia (${APP_INFO.name} v${APP_INFO.version})`,
     },
     defaultStyle: {
       font: 'Roboto',
@@ -1278,24 +1281,60 @@ export async function generateAndDownloadPdf(
       },
     },
     footer: (currentPage, pageCount) => ({
-      margin: [38, 8, 38, 0],
-      columns: [
+      margin: [38, 6, 38, 0],
+      stack: [
         {
-          text: `${options.settings.schoolName} · ${student.firstName} ${student.lastName} (kl. ${student.className})${student.isTestData ? ' · DANE TESTOWE' : ''}`,
-          fontSize: 7.5,
-          color: '#64748b',
+          columns: [
+            {
+              text: `${options.settings.schoolName} · ${student.firstName} ${student.lastName} (kl. ${student.className})${student.isTestData ? ' · DANE TESTOWE' : ''}`,
+              fontSize: 7.5,
+              color: '#64748b',
+            },
+            {
+              text: `Strona ${currentPage} z ${pageCount}`,
+              fontSize: 7.5,
+              color: '#64748b',
+              alignment: 'right',
+            },
+          ],
         },
         {
-          text: `Strona ${currentPage} z ${pageCount}`,
-          fontSize: 7.5,
-          color: '#64748b',
-          alignment: 'right',
+          text: `Wzór pomocniczy (stan prawny na dzień ${LEGAL_FRAMEWORK_AS_OF_PL}) — nie zastępuje decyzji zespołu, dyrektora ani analizy przepisów.`,
+          fontSize: 6.5,
+          color: '#94a3b8',
+          margin: [0, 1, 0, 0],
         },
       ],
     }),
     content,
   };
+}
 
+export async function generatePdfBuffer(
+  options: PdfGenerationOptions,
+): Promise<Uint8Array> {
+  const pm = getPdfMakeInstance();
+  const docDefinition = buildPdfDocumentDefinition(options);
+  const pdfDoc = pm.createPdf(docDefinition) as unknown as {
+    getBuffer: (() => Promise<Uint8Array>) & ((cb: (buf: Uint8Array) => void) => void);
+  };
+  const maybePromise = pdfDoc.getBuffer();
+  if (maybePromise && typeof (maybePromise as Promise<Uint8Array>).then === 'function') {
+    const buf = await (maybePromise as Promise<Uint8Array>);
+    return buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+  }
+  return await new Promise<Uint8Array>((resolve) => {
+    pdfDoc.getBuffer((buf: Uint8Array) => {
+      resolve(buf instanceof Uint8Array ? buf : new Uint8Array(buf));
+    });
+  });
+}
+
+export async function generateAndDownloadPdf(
+  options: PdfGenerationOptions,
+): Promise<string> {
+  const pm = getPdfMakeInstance();
+  const docDefinition = buildPdfDocumentDefinition(options);
   const fileName = buildPdfFileName(options);
   const pdfDoc = pm.createPdf(docDefinition);
   await Promise.resolve(pdfDoc.download(fileName));

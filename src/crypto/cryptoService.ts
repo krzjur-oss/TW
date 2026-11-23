@@ -7,6 +7,12 @@ import type {
   ProgramModificationAnnex,
   StudentProfile,
 } from '../types/domain';
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_DECRYPTED_BYTES,
+  validateFullDatabaseBundle,
+  validateSingleStudentBundle,
+} from '../validation/bundleValidation';
 
 export type ArchiveScope = 'SINGLE_STUDENT' | 'FULL_DATABASE';
 
@@ -41,19 +47,22 @@ export interface FullDatabaseBundle {
 }
 
 const PBKDF2_ITERATIONS = 210_000;
-const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
 
-function ensureWebCrypto(): SubtleCrypto {
+function getCryptoRoot(): Crypto {
   if (
-    typeof window === 'undefined' ||
-    !window.crypto ||
-    !window.crypto.subtle
+    typeof globalThis === 'undefined' ||
+    !globalThis.crypto ||
+    !globalThis.crypto.subtle
   ) {
     throw new Error(
       'Przeglądarka nie udostępnia natywnego Web Crypto API (wymagane bezpieczne środowisko HTTPS/localhost).',
     );
   }
-  return window.crypto.subtle;
+  return globalThis.crypto;
+}
+
+function ensureWebCrypto(): SubtleCrypto {
+  return getCryptoRoot().subtle;
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
@@ -88,7 +97,7 @@ function toArrayBuffer(view: Uint8Array): ArrayBuffer {
 export function generateStrongPassword(): string {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789!@#$%';
   const randomBytes = new Uint8Array(16);
-  window.crypto.getRandomValues(randomBytes);
+  getCryptoRoot().getRandomValues(randomBytes);
 
   const chars: string[] = [];
   for (let i = 0; i < 16; i += 1) {
@@ -173,9 +182,9 @@ export async function createAppLockConfig(
   mode: AppLockMode,
   secret: string,
 ): Promise<AppLockConfig> {
-  ensureWebCrypto();
+  const cryptoRoot = getCryptoRoot();
   const salt = new Uint8Array(16);
-  window.crypto.getRandomValues(salt);
+  cryptoRoot.getRandomValues(salt);
   const hashBytes = await deriveLockHashBytes(secret, salt, PBKDF2_ITERATIONS);
 
   return {
@@ -218,14 +227,20 @@ export async function encryptBundleToIpetString(
   if (!password || password.length < 4) {
     throw new Error('Hasło szyfrowania musi mieć co najmniej 4 znaki.');
   }
-  const subtle = ensureWebCrypto();
+  const cryptoRoot = getCryptoRoot();
+  const subtle = cryptoRoot.subtle;
   const salt = new Uint8Array(16);
   const iv = new Uint8Array(12);
-  window.crypto.getRandomValues(salt);
-  window.crypto.getRandomValues(iv);
+  cryptoRoot.getRandomValues(salt);
+  cryptoRoot.getRandomValues(iv);
 
   const key = await deriveAesKey(password, salt, PBKDF2_ITERATIONS, ['encrypt']);
   const encodedPayload = new TextEncoder().encode(JSON.stringify(payload));
+  if (encodedPayload.byteLength > MAX_DECRYPTED_BYTES) {
+    throw new Error(
+      'Rozmiar danych do zaszyfrowania przekracza bezpieczny limit 20 MB.',
+    );
+  }
   const encryptedBuffer = await subtle.encrypt(
     {
       name: 'AES-GCM',
@@ -277,11 +292,15 @@ function parseEnvelope(rawText: string): EncryptedArchiveEnvelope {
     env.kdf !== 'PBKDF2-SHA256' ||
     (env.scope !== 'SINGLE_STUDENT' && env.scope !== 'FULL_DATABASE') ||
     typeof env.iterations !== 'number' ||
+    !Number.isInteger(env.iterations) ||
     env.iterations < 50_000 ||
     env.iterations > 2_000_000 ||
     typeof env.salt !== 'string' ||
+    !env.salt ||
     typeof env.iv !== 'string' ||
-    typeof env.ciphertext !== 'string'
+    !env.iv ||
+    typeof env.ciphertext !== 'string' ||
+    !env.ciphertext
   ) {
     throw new Error(
       'Plik ma nieobsługiwany format lub uszkodzony nagłówek kryptograficzny.',
@@ -347,6 +366,12 @@ export async function decryptIpetArchive<
     );
   }
 
+  if (decryptedBuffer.byteLength > MAX_DECRYPTED_BYTES) {
+    throw new Error(
+      'Odszyfrowana zawartość pliku przekracza maksymalny bezpieczny rozmiar (20 MB).',
+    );
+  }
+
   let payload: unknown;
   try {
     const decoded = new TextDecoder().decode(decryptedBuffer);
@@ -355,34 +380,14 @@ export async function decryptIpetArchive<
     throw new Error('Odszyfrowana zawartość pliku jest uszkodzona.');
   }
 
-  if (!payload || typeof payload !== 'object') {
-    throw new Error('Odszyfrowany pakiet danych ma nieprawidłową strukturę.');
-  }
-
-  const candidate = payload as Record<string, unknown>;
-  if (expectedScope === 'SINGLE_STUDENT') {
-    if (
-      candidate.kind !== 'SINGLE_STUDENT_BUNDLE' ||
-      !candidate.student ||
-      typeof candidate.student !== 'object'
-    ) {
-      throw new Error(
-        'Odszyfrowany plik nie zawiera poprawnego profilu ucznia.',
-      );
-    }
-  } else if (
-    candidate.kind !== 'FULL_DATABASE_BUNDLE' ||
-    !Array.isArray(candidate.students) ||
-    !candidate.facilitySettings
-  ) {
-    throw new Error(
-      'Odszyfrowany plik nie zawiera poprawnego pełnego backupu bazy.',
-    );
-  }
+  const validatedPayload =
+    expectedScope === 'SINGLE_STUDENT'
+      ? validateSingleStudentBundle(payload)
+      : validateFullDatabaseBundle(payload);
 
   return {
     envelope,
-    payload: payload as T,
+    payload: validatedPayload as T,
   };
 }
 

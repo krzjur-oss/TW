@@ -11,6 +11,7 @@ import { IpetEditorStep } from './IpetEditorStep';
 import { OpinionSupportEditor } from './OpinionSupportWizard';
 import { TeamAndDeadlinesStep } from './TeamAndDeadlinesStep';
 import { WopfuEditorStep } from './WopfuEditorStep';
+import { useRegisterUnsavedChanges } from '../../utils/unsavedChangesRegistry';
 
 interface DocumentationWizardProps {
   student: StudentProfile;
@@ -28,6 +29,12 @@ export const DocumentationWizard: React.FC<DocumentationWizardProps> = ({
   );
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+
+  useRegisterUnsavedChanges(
+    'wizard-draft',
+    saveState === 'saving',
+    'Kreator WOPFU / IPET',
+  );
 
   // Sync when switching to another student
   useEffect(() => {
