@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  HashRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useMatch,
+  useNavigate,
+} from 'react-router-dom';
+import {
   BookMarked,
   FileUp,
   Lock,
@@ -39,13 +48,11 @@ import { StudentImportModal } from './components/security/StudentImportModal';
 import { APP_INFO } from './config/appInfo';
 import type { FacilitySettings, StudentProfile } from './types/domain';
 
-type ActiveRoute = 'STUDENTS' | 'SETTINGS' | 'ABOUT';
+function AppShell() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const studentMatch = useMatch('/uczen/:studentId');
 
-export default function App() {
-  const [route, setRoute] = useState<ActiveRoute>('STUDENTS');
-  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(
-    null,
-  );
   const [students, setStudents] = useState<StudentProfile[]>([]);
   const [settings, setSettings] = useState<FacilitySettings>(
     DEFAULT_FACILITY_SETTINGS,
@@ -69,6 +76,21 @@ export default function App() {
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
   const initialLockCheckedRef = useRef(false);
+
+  const selectedStudentId = studentMatch?.params.studentId
+    ? decodeURIComponent(studentMatch.params.studentId)
+    : null;
+
+  const selectedStudent =
+    selectedStudentId !== null
+      ? students.find((s) => s.id === selectedStudentId) ?? null
+      : null;
+
+  const isSettingsRoute = location.pathname === '/ustawienia';
+  const isAboutRoute = location.pathname === '/o-programie';
+  const isStudentsSection = !isSettingsRoute && !isAboutRoute;
+  const isStudentListRoute =
+    location.pathname === '/' || location.pathname === '/uczniowie';
 
   const applyThemeClass = useCallback((theme: 'light' | 'dark') => {
     const root = document.documentElement;
@@ -128,7 +150,7 @@ export default function App() {
   const handleDeleteStudent = async (studentId: string) => {
     await deleteStudentAndRelated(studentId);
     if (selectedStudentId === studentId) {
-      setSelectedStudentId(null);
+      navigate('/');
     }
     await refreshData();
   };
@@ -153,7 +175,7 @@ export default function App() {
         selectedStudentId === 'test-student-jan-kowalski' ||
         selectedStudentId === 'test-student-zuzanna-wisniewska'
       ) {
-        setSelectedStudentId(null);
+        navigate('/');
       }
     } else {
       await loadTestStudentBundle();
@@ -176,25 +198,18 @@ export default function App() {
     setFormModalOpen(true);
   };
 
-  const selectedStudent =
-    selectedStudentId !== null
-      ? students.find((s) => s.id === selectedStudentId) ?? null
-      : null;
-
-  const navigateTo = (nextRoute: ActiveRoute) => {
-    setRoute(nextRoute);
-    setSelectedStudentId(null);
+  const navigateTo = (path: string) => {
+    navigate(path);
     setMobileMenuOpen(false);
   };
 
-  const pageTitle =
-    route === 'SETTINGS'
-      ? 'Ustawienia placówki'
-      : route === 'ABOUT'
-        ? 'O programie i przepisy prawa'
-        : selectedStudent
-          ? `${selectedStudent.firstName} ${selectedStudent.lastName}`
-          : 'Lista uczniów';
+  const pageTitle = isSettingsRoute
+    ? 'Ustawienia placówki'
+    : isAboutRoute
+      ? 'O programie i przepisy prawa'
+      : selectedStudent
+        ? `${selectedStudent.firstName} ${selectedStudent.lastName}`
+        : 'Lista uczniów';
 
   const handleLockNow = () => {
     setMobileMenuOpen(false);
@@ -238,9 +253,9 @@ export default function App() {
         <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Nawigacja główna">
           <button
             type="button"
-            onClick={() => navigateTo('STUDENTS')}
+            onClick={() => navigateTo('/')}
             className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-              route === 'STUDENTS'
+              isStudentsSection
                 ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/60 dark:hover:text-white'
             }`}
@@ -256,9 +271,9 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => navigateTo('SETTINGS')}
+            onClick={() => navigateTo('/ustawienia')}
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-              route === 'SETTINGS'
+              isSettingsRoute
                 ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/60 dark:hover:text-white'
             }`}
@@ -269,9 +284,9 @@ export default function App() {
 
           <button
             type="button"
-            onClick={() => navigateTo('ABOUT')}
+            onClick={() => navigateTo('/o-programie')}
             className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-              route === 'ABOUT'
+              isAboutRoute
                 ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                 : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800/60 dark:hover:text-white'
             }`}
@@ -290,7 +305,7 @@ export default function App() {
               <span>Rok {settings.defaultSchoolYear}</span>
               <button
                 type="button"
-                onClick={() => navigateTo('ABOUT')}
+                onClick={() => navigateTo('/o-programie')}
                 title="Zobacz opis programu i przepisy prawa"
                 className="text-slate-500 hover:text-blue-700 dark:text-slate-400 dark:hover:text-blue-400"
               >
@@ -362,9 +377,9 @@ export default function App() {
             <nav className="flex-1 space-y-1 px-3 py-4">
               <button
                 type="button"
-                onClick={() => navigateTo('STUDENTS')}
+                onClick={() => navigateTo('/')}
                 className={`flex w-full items-center justify-between rounded-lg px-3 py-2.5 text-sm font-medium ${
-                  route === 'STUDENTS'
+                  isStudentsSection
                     ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                     : 'text-slate-600 dark:text-slate-300'
                 }`}
@@ -379,9 +394,9 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => navigateTo('SETTINGS')}
+                onClick={() => navigateTo('/ustawienia')}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium ${
-                  route === 'SETTINGS'
+                  isSettingsRoute
                     ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                     : 'text-slate-600 dark:text-slate-300'
                 }`}
@@ -391,9 +406,9 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => navigateTo('ABOUT')}
+                onClick={() => navigateTo('/o-programie')}
                 className={`flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-sm font-medium ${
-                  route === 'ABOUT'
+                  isAboutRoute
                     ? 'bg-slate-100 text-slate-900 dark:bg-slate-800 dark:text-slate-100'
                     : 'text-slate-600 dark:text-slate-300'
                 }`}
@@ -408,9 +423,13 @@ export default function App() {
                 <span className="truncate font-medium text-slate-700 dark:text-slate-200">
                   {settings.schoolName}
                 </span>
-                <span className="font-mono tabular-nums shrink-0">
+                <button
+                  type="button"
+                  onClick={() => navigateTo('/o-programie')}
+                  className="font-mono tabular-nums shrink-0 hover:text-blue-700 dark:hover:text-blue-400"
+                >
                   v{APP_INFO.version}
-                </span>
+                </button>
               </div>
               <button
                 type="button"
@@ -462,7 +481,7 @@ export default function App() {
               <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                 <button
                   type="button"
-                  onClick={() => navigateTo('STUDENTS')}
+                  onClick={() => navigateTo('/')}
                   className="hover:text-slate-800 dark:hover:text-slate-200 truncate"
                 >
                   Dokumentacja wsparcia
@@ -479,7 +498,7 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {route === 'STUDENTS' && !selectedStudent && (
+            {isStudentListRoute && (
               <>
                 <button
                   type="button"
@@ -514,46 +533,62 @@ export default function App() {
         </header>
 
         <main className="mx-auto w-full max-w-6xl flex-1 px-4 py-6 sm:px-6 lg:px-8 print:max-w-none print:p-0">
-          {route === 'STUDENTS' && !selectedStudent && (
-            <StudentListView
-              students={students}
-              loading={loading}
-              onSelectStudent={(id) => setSelectedStudentId(id)}
-              onAddStudent={openNewStudentModal}
-              onImportStudent={() => setImportModalOpen(true)}
-              onEditStudent={openEditStudentModal}
-              onGoToSettings={() => navigateTo('SETTINGS')}
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <StudentListView
+                  students={students}
+                  loading={loading}
+                  onSelectStudent={(id) =>
+                    navigate(`/uczen/${encodeURIComponent(id)}`)
+                  }
+                  onAddStudent={openNewStudentModal}
+                  onImportStudent={() => setImportModalOpen(true)}
+                  onEditStudent={openEditStudentModal}
+                  onGoToSettings={() => navigateTo('/ustawienia')}
+                />
+              }
             />
-          )}
-
-          {route === 'STUDENTS' && selectedStudent && (
-            <StudentDetailView
-              student={selectedStudent}
-              facilitySettings={settings}
-              defaultTeamRole={settings.defaultTeamRole}
-              onBack={() => setSelectedStudentId(null)}
-              onEditStudent={openEditStudentModal}
-              onSaveStudent={handleSaveStudent}
-              onDeleteStudent={handleDeleteStudent}
-              onDataChanged={refreshData}
+            <Route path="/uczniowie" element={<Navigate to="/" replace />} />
+            <Route
+              path="/uczen/:studentId"
+              element={
+                selectedStudent ? (
+                  <StudentDetailView
+                    student={selectedStudent}
+                    facilitySettings={settings}
+                    defaultTeamRole={settings.defaultTeamRole}
+                    onBack={() => navigate('/')}
+                    onEditStudent={openEditStudentModal}
+                    onSaveStudent={handleSaveStudent}
+                    onDeleteStudent={handleDeleteStudent}
+                    onDataChanged={refreshData}
+                  />
+                ) : (
+                  <Navigate to="/" replace />
+                )
+              }
             />
-          )}
-
-          {route === 'SETTINGS' && (
-            <SettingsView
-              settings={settings}
-              stats={stats}
-              hasTestStudentLoaded={hasTestStudentLoaded}
-              hasTestOpinionLoaded={hasTestOpinionLoaded}
-              onSaveSettings={handleSaveSettings}
-              onToggleTestStudent={handleToggleTestStudent}
-              onLoadTestOpinionStudent={handleLoadTestOpinionStudent}
-              onDatabaseRestored={refreshData}
-              onLockNow={handleLockNow}
+            <Route
+              path="/ustawienia"
+              element={
+                <SettingsView
+                  settings={settings}
+                  stats={stats}
+                  hasTestStudentLoaded={hasTestStudentLoaded}
+                  hasTestOpinionLoaded={hasTestOpinionLoaded}
+                  onSaveSettings={handleSaveSettings}
+                  onToggleTestStudent={handleToggleTestStudent}
+                  onLoadTestOpinionStudent={handleLoadTestOpinionStudent}
+                  onDatabaseRestored={refreshData}
+                  onLockNow={handleLockNow}
+                />
+              }
             />
-          )}
-
-          {route === 'ABOUT' && <AboutAndLegalView />}
+            <Route path="/o-programie" element={<AboutAndLegalView />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </main>
       </div>
 
@@ -573,12 +608,19 @@ export default function App() {
         onClose={() => setImportModalOpen(false)}
         onImported={async (studentId) => {
           await refreshData();
-          setRoute('STUDENTS');
-          setSelectedStudentId(studentId);
+          navigate(`/uczen/${encodeURIComponent(studentId)}`);
         }}
       />
 
       <OfflineIndicator />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <HashRouter>
+      <AppShell />
+    </HashRouter>
   );
 }
