@@ -1,0 +1,6 @@
+{
+  "name": "Teczka Wsparcia — Dokumentacja IPET i WOPFU",
+  "description": "Lokalna aplikacja PWA dla nauczycieli i specjalistów szkolnych do prowadzenia dokumentacji wsparcia ucznia (IPET, WOPFU, dziennik obserwacji, oceny okresowe).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
