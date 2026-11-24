@@ -1,6 +1,10 @@
-# AUDYT NAPRAWA — CHANGELOG (`Teczka Wsparcia` v1.6.0)
+# AUDYT NAPRAWA — CHANGELOG (`Teczka Wsparcia` v1.6.0 → v1.6.2)
 
-Data wdrożenia poprawek: `2026-11-23`  
+> **Uwaga dotycząca wydań:** Niniejszy dokument opisuje pierwotny pakiet poprawek po audycie wdrożony w wersji `v1.6.0` (`2026-11-23`). Kolejne wydania uzupełniające:
+> - **`v1.6.1`** (`2026-11-23`): dostosowanie licencji WLDE (`LICENSE.md`), regulaminu (`REGULAMIN.md`), ekranu obowiązkowej akceptacji przed pierwszym uruchomieniem oraz zwijanej historii zmian.
+> - **`v1.6.2`** (`2026-11-24`): spójne limity bajtów UTF-8 eksportu/importu `.ipet` (20 MB dane jawne / 28 MB archiwum), opcjonalna automatyczna blokada UI po bezczynności i w tle (`visibilitychange`) bez utraty niezapisanych danych oraz pełny raport w pliku `RAPORT_NAPRAW_1.6.2.md`.
+
+Data pierwotnego wdrożenia (`v1.6.0`): `2026-11-23` · Aktualne wydanie: `v1.6.2` (`2026-11-24`)  
 Stan prawny wzorców dokumentacji: `23 listopada 2026 r.` (`2026-11-23`)  
 Nazwa bazy `IndexedDB`: `TeczkaWsparciaLocalDB` (zachowana bez zmian, schemat `v1 → v2`)  
 Format zaszyfrowanych archiwów `.ipet`: `TECZKA_WSPARCIA_ENCRYPTED` (wersja `1`, `AES-GCM 256-bit` + `PBKDF2-SHA256` / `210 000` iteracji)

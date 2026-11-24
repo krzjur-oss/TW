@@ -21,7 +21,11 @@ import {
   type FullBackupRestoreMode,
   type FullDatabaseImportAnalysis,
 } from '../../db/database';
-import { MAX_ARCHIVE_BYTES } from '../../validation/bundleValidation';
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_MB,
+  MAX_DECRYPTED_MB,
+} from '../../validation/bundleValidation';
 
 interface FullBackupRestoreModalProps {
   open: boolean;
@@ -86,7 +90,9 @@ export const FullBackupRestoreModal: React.FC<FullBackupRestoreModalProps> = ({
     }
 
     if (file.size > MAX_ARCHIVE_BYTES) {
-      setError('Plik kopii przekracza maksymalny bezpieczny rozmiar (25 MB).');
+      setError(
+        `Plik kopii przekracza maksymalny bezpieczny rozmiar archiwum (${MAX_ARCHIVE_MB} MB; dane jawne do ${MAX_DECRYPTED_MB} MB).`,
+      );
       return;
     }
 

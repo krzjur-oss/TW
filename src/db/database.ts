@@ -23,6 +23,10 @@ import {
   validateFullDatabaseBundle,
   validateSingleStudentBundle,
 } from '../validation/bundleValidation';
+import {
+  normalizeAutoLockMinutes,
+  normalizeBackgroundLockPolicy,
+} from '../utils/autoLockController';
 
 export class TeczkaWsparciaDatabase extends Dexie {
   students!: Table<StudentProfile, string>;
@@ -245,9 +249,40 @@ export function normalizeProgramAnnex(
   };
 }
 
+export function normalizeFacilitySettings(
+  raw: FacilitySettings,
+): FacilitySettings {
+  const normalizedAppLock = raw.appLock
+    ? {
+        ...raw.appLock,
+        autoLockMinutes: normalizeAutoLockMinutes(
+          raw.appLock.autoLockMinutes,
+          0,
+        ),
+        backgroundLockPolicy: normalizeBackgroundLockPolicy(
+          raw.appLock.backgroundLockPolicy,
+          raw.appLock.autoLockMinutes === undefined ? 'OFF' : 'RESPECT_IDLE',
+        ),
+      }
+    : undefined;
+
+  return {
+    ...DEFAULT_FACILITY_SETTINGS,
+    ...raw,
+    id: 'default',
+    address: raw.address ?? '',
+    city: raw.city ?? '',
+    directorName: raw.directorName ?? '',
+    defaultTeamRole:
+      raw.defaultTeamRole ?? DEFAULT_FACILITY_SETTINGS.defaultTeamRole,
+    theme: raw.theme === 'dark' ? 'dark' : 'light',
+    appLock: normalizedAppLock,
+  };
+}
+
 export async function getFacilitySettings(): Promise<FacilitySettings> {
   const existing = await db.facilitySettings.get('default');
-  if (existing) return existing;
+  if (existing) return normalizeFacilitySettings(existing);
   const fresh: FacilitySettings = {
     ...DEFAULT_FACILITY_SETTINGS,
     updatedAt: new Date().toISOString(),

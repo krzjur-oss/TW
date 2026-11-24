@@ -1,7 +1,7 @@
 # LICENCJA UŻYTKOWANIA OPROGRAMOWANIA
 ## Wolna Licencja Domowo-Edukacyjna (Zastrzeżona) — WLDE
 
-### Projekt: Teczka Wsparcia (wersja 1.6.1 i wyższe)
+### Projekt: Teczka Wsparcia (wersja 1.6.2 i wyższe)
 
 **Właściciel praw autorskich i twórca:**
 **mgr Krzysztof Jureczek**

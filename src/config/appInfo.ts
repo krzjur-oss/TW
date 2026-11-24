@@ -4,7 +4,7 @@ export const LEGAL_FRAMEWORK_AS_OF_PL = '23 listopada 2026 r.';
 export const APP_INFO = {
   name: 'Teczka Wsparcia',
   shortName: 'TeczkaIPET',
-  version: '1.6.1',
+  version: '1.6.2',
   editionLabel: 'Local-First PWA · Offline-First',
   legalStateDateIso: LEGAL_FRAMEWORK_AS_OF_ISO,
   legalStateDateLabel: LEGAL_FRAMEWORK_AS_OF_PL,
@@ -38,7 +38,7 @@ export const PROGRAM_FEATURES: ProgramFeatureSummary[] = [
   {
     title: 'Ochrona danych wrażliwych (RODO)',
     description:
-      'Szyfrowany eksport i pełny backup w formacie .ipet (Web Crypto API: PBKDF2-SHA256 + AES-GCM 256-bit) oraz opcjonalna blokada ekranu interfejsu (UI) z czasowym limitem prób. Baza IndexedDB nie jest obecnie szyfrowana w spoczynku — przy danych rzeczywistych wymagane jest szyfrowanie dysku urządzenia i chronione konto systemowe.',
+      'Szyfrowany eksport i pełny backup w formacie .ipet (Web Crypto API: PBKDF2-SHA256 + AES-GCM 256-bit; dane jawne do 20 MB UTF-8, archiwum do 28 MB) oraz opcjonalna blokada interfejsu (UI) z limitem prób i konfiguracją auto-blokady po bezczynności lub przejściu w tło. Baza IndexedDB nie jest obecnie szyfrowana w spoczynku — przy danych rzeczywistych wymagane jest szyfrowanie dysku urządzenia i chronione konto systemowe.',
   },
 ];
 
@@ -51,6 +51,18 @@ export interface ChangelogEntry {
 }
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '1.6.2',
+    dateLabel: '24 listopada 2026 r.',
+    title: 'Spójne limity archiwów .ipet oraz automatyczna blokada UI po bezczynności',
+    summary:
+      'Usunięcie rozbieżności limitów rozmiaru przy eksporcie i imporcie .ipet oraz wdrożenie opcjonalnej automatycznej blokady interfejsu bez utraty niezapisanych danych.',
+    highlights: [
+      'Zdefiniowano spójne limity w bajtach UTF-8 dla danych jawnych (20 MB), szyfrogramu AES-GCM (+16 B) oraz pełnego archiwum .ipet (28 MB po kodowaniu Base64) — każdy poprawnie wyeksportowany plik przechodzi własny importer.',
+      'Dodano w ustawieniach opcjonalną automatyczną blokadę UI po bezczynności (1, 5, 10, 15 minut lub wyłączoną) oraz bezpieczną obsługę przejścia aplikacji do tła (visibilitychange) odporną na dławienie timerów.',
+      'Zabezpieczono obszar roboczy podczas automatycznego zablokowania tak, aby aktywne pisanie resetowało licznik i nie powodowało utraty niezapisanych formularzy po odblokowaniu.',
+    ],
+  },
   {
     version: '1.6.1',
     dateLabel: '23 listopada 2026 r.',

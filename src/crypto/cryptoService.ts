@@ -1,6 +1,8 @@
 import type {
   AppLockConfig,
   AppLockMode,
+  AutoLockMinutes,
+  BackgroundLockPolicy,
   FacilitySettings,
   JournalEntry,
   PeriodicEvaluation,
@@ -9,7 +11,11 @@ import type {
 } from '../types/domain';
 import {
   MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_MB,
+  MAX_CIPHERTEXT_BYTES,
   MAX_DECRYPTED_BYTES,
+  MAX_DECRYPTED_MB,
+  measureUtf8Bytes,
   validateFullDatabaseBundle,
   validateSingleStudentBundle,
 } from '../validation/bundleValidation';
@@ -178,9 +184,15 @@ function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+export interface AppLockTimingOptions {
+  autoLockMinutes?: AutoLockMinutes;
+  backgroundLockPolicy?: BackgroundLockPolicy;
+}
+
 export async function createAppLockConfig(
   mode: AppLockMode,
   secret: string,
+  options: AppLockTimingOptions = {},
 ): Promise<AppLockConfig> {
   const cryptoRoot = getCryptoRoot();
   const salt = new Uint8Array(16);
@@ -193,6 +205,8 @@ export async function createAppLockConfig(
     salt: bytesToBase64(salt),
     hash: bytesToBase64(hashBytes),
     iterations: PBKDF2_ITERATIONS,
+    autoLockMinutes: options.autoLockMinutes ?? 5,
+    backgroundLockPolicy: options.backgroundLockPolicy ?? 'RESPECT_IDLE',
     updatedAt: new Date().toISOString(),
   };
 }
@@ -237,8 +251,9 @@ export async function encryptBundleToIpetString(
   const key = await deriveAesKey(password, salt, PBKDF2_ITERATIONS, ['encrypt']);
   const encodedPayload = new TextEncoder().encode(JSON.stringify(payload));
   if (encodedPayload.byteLength > MAX_DECRYPTED_BYTES) {
+    const actualMb = (encodedPayload.byteLength / (1024 * 1024)).toFixed(2);
     throw new Error(
-      'Rozmiar danych do zaszyfrowania przekracza bezpieczny limit 20 MB.',
+      `Rozmiar danych do zaszyfrowania (${actualMb} MB UTF-8) przekracza bezpieczny limit ${MAX_DECRYPTED_MB} MB.`,
     );
   }
   const encryptedBuffer = await subtle.encrypt(
@@ -249,6 +264,12 @@ export async function encryptBundleToIpetString(
     key,
     toArrayBuffer(encodedPayload),
   );
+
+  if (encryptedBuffer.byteLength > MAX_CIPHERTEXT_BYTES) {
+    throw new Error(
+      `Rozmiar zaszyfrowanego ładunku przekracza bezpieczny limit archiwum (${MAX_ARCHIVE_MB} MB).`,
+    );
+  }
 
   const envelope: EncryptedArchiveEnvelope = {
     format: 'TECZKA_WSPARCIA_ENCRYPTED',
@@ -263,12 +284,21 @@ export async function encryptBundleToIpetString(
     exportedAt: new Date().toISOString(),
   };
 
-  return JSON.stringify(envelope);
+  const serialized = JSON.stringify(envelope);
+  if (measureUtf8Bytes(serialized) > MAX_ARCHIVE_BYTES) {
+    throw new Error(
+      `Wygenerowane archiwum .ipet przekracza maksymalny bezpieczny rozmiar (${MAX_ARCHIVE_MB} MB UTF-8).`,
+    );
+  }
+
+  return serialized;
 }
 
 function parseEnvelope(rawText: string): EncryptedArchiveEnvelope {
-  if (rawText.length > MAX_ARCHIVE_BYTES) {
-    throw new Error('Plik przekracza maksymalny bezpieczny rozmiar (25 MB).');
+  if (measureUtf8Bytes(rawText) > MAX_ARCHIVE_BYTES) {
+    throw new Error(
+      `Plik przekracza maksymalny bezpieczny rozmiar archiwum (${MAX_ARCHIVE_MB} MB UTF-8; dane jawne do ${MAX_DECRYPTED_MB} MB).`,
+    );
   }
 
   let parsed: unknown;
@@ -346,6 +376,12 @@ export async function decryptIpetArchive<
     throw new Error('Dane kryptograficzne w pliku są uszkodzone.');
   }
 
+  if (ciphertext.byteLength > MAX_CIPHERTEXT_BYTES) {
+    throw new Error(
+      `Zaszyfrowana zawartość pliku przekracza bezpieczny limit (${MAX_DECRYPTED_MB} MB danych jawnych).`,
+    );
+  }
+
   const key = await deriveAesKey(password, salt, envelope.iterations, [
     'decrypt',
   ]);
@@ -368,7 +404,7 @@ export async function decryptIpetArchive<
 
   if (decryptedBuffer.byteLength > MAX_DECRYPTED_BYTES) {
     throw new Error(
-      'Odszyfrowana zawartość pliku przekracza maksymalny bezpieczny rozmiar (20 MB).',
+      `Odszyfrowana zawartość pliku przekracza maksymalny bezpieczny rozmiar (${MAX_DECRYPTED_MB} MB UTF-8).`,
     );
   }
 

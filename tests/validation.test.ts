@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import {
+  normalizeFacilitySettings,
   normalizeJournalEntry,
   normalizePeriodicEvaluation,
   normalizeProgramAnnex,
   normalizeStudentProfile,
 } from '../src/db/database';
 import {
+  AES_GCM_TAG_BYTES,
   BundleValidationError,
   isValidIsoDateStrict,
+  MAX_ARCHIVE_BASE64_BYTES,
   MAX_ARCHIVE_BYTES,
+  MAX_CIPHERTEXT_BYTES,
   MAX_DECRYPTED_BYTES,
+  measureUtf8Bytes,
   VALIDATION_LIMITS,
   validateFacilitySettings,
   validateFullDatabaseBundle,
@@ -169,12 +174,20 @@ describe('Walidacja i normalizacja danych (bundleValidation + normalizers)', () 
     ).toThrow(/innego ucznia/);
   });
 
-  it('zachowuje zdefiniowane limity rozmiaru wejścia i odszyfrowania', () => {
-    expect(MAX_ARCHIVE_BYTES).toBeGreaterThanOrEqual(20 * 1024 * 1024);
-    expect(MAX_DECRYPTED_BYTES).toBeGreaterThanOrEqual(10 * 1024 * 1024);
+  it('zachowuje spójne limity bajtów UTF-8 (20 MiB jawne + tag + Base64 <= 28 MiB archiwum)', () => {
+    expect(MAX_DECRYPTED_BYTES).toBe(20 * 1024 * 1024);
+    expect(MAX_CIPHERTEXT_BYTES).toBe(
+      MAX_DECRYPTED_BYTES + AES_GCM_TAG_BYTES,
+    );
+    expect(MAX_ARCHIVE_BYTES).toBeGreaterThan(MAX_ARCHIVE_BASE64_BYTES + 1024);
+
+    const sample = 'Zażółć gęślą jaźń 🏫🔒';
+    expect(measureUtf8Bytes(sample)).toBe(
+      new TextEncoder().encode(sample).byteLength,
+    );
   });
 
-  it('normalizuje rekordy ze starszej wersji bazy bez utraty danych', () => {
+  it('normalizuje rekordy ze starszej wersji bazy oraz ustawienia FacilitySettings bez utraty danych', () => {
     const legacyStudent = makeSyntheticStudent('stu-legacy');
     delete (legacyStudent as { wopfuDraft?: unknown }).wopfuDraft;
     delete (legacyStudent.pppDocument as { submissionDate?: unknown })
@@ -203,5 +216,23 @@ describe('Walidacja i normalizacja danych (bundleValidation + normalizers)', () 
     const legacyAnnex = makeSyntheticAnnex('a-legacy', 'stu-legacy');
     delete (legacyAnnex as { changedSections?: unknown }).changedSections;
     expect(normalizeProgramAnnex(legacyAnnex).changedSections).toEqual([]);
+
+    // Migracja starszych ustawień blokady (bez pól autoLockMinutes / backgroundLockPolicy)
+    const legacySettings = makeSyntheticSettings({
+      appLock: {
+        enabled: true,
+        mode: 'PIN',
+        salt: 'c2FsdA==',
+        hash: 'aGFzaA==',
+        iterations: 210_000,
+        updatedAt: '2026-11-23T10:00:00.000Z',
+      },
+    });
+    const normalizedSettings = normalizeFacilitySettings(legacySettings);
+    expect(normalizedSettings.schoolName).toBe(legacySettings.schoolName);
+    expect(normalizedSettings.appLock?.enabled).toBe(true);
+    expect(normalizedSettings.appLock?.salt).toBe('c2FsdA==');
+    expect(normalizedSettings.appLock?.autoLockMinutes).toBe(0);
+    expect(normalizedSettings.appLock?.backgroundLockPolicy).toBe('OFF');
   });
 });

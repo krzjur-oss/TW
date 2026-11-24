@@ -34,8 +34,50 @@ import {
   type WopfuStructureDraft,
 } from '../types/domain';
 
-export const MAX_ARCHIVE_BYTES = 25 * 1024 * 1024;
+/**
+ * Spójne limity rozmiaru (w bajtach UTF-8) dla eksportu i importu archiwów .ipet:
+ * - Dane jawne JSON: 20 MiB (20 * 1024 * 1024 = 20 971 520 B)
+ * - Tag uwierzytelniający AES-GCM (128-bit): 16 B -> maks. szyfrogram 20 971 536 B
+ * - Narzut Base64 dla maks. szyfrogramu: ceil(20 971 536 / 3) * 4 = 27 962 048 B (~26,67 MiB)
+ * - Całe zserializowane archiwum JSON .ipet (Base64 + nagłówek koperty): 28 MiB (29 360 128 B)
+ */
+export const AES_GCM_TAG_BYTES = 16;
 export const MAX_DECRYPTED_BYTES = 20 * 1024 * 1024;
+export const MAX_CIPHERTEXT_BYTES = MAX_DECRYPTED_BYTES + AES_GCM_TAG_BYTES;
+export const MAX_ARCHIVE_BASE64_BYTES =
+  Math.ceil(MAX_CIPHERTEXT_BYTES / 3) * 4;
+export const MAX_ARCHIVE_BYTES = 28 * 1024 * 1024;
+export const MAX_DECRYPTED_MB = Math.round(MAX_DECRYPTED_BYTES / (1024 * 1024));
+export const MAX_ARCHIVE_MB = Math.round(MAX_ARCHIVE_BYTES / (1024 * 1024));
+
+/**
+ * Oblicza dokładny rozmiar tekstu w bajtach UTF-8 (zgodnie z TextEncoder) bez alokacji bufora.
+ */
+export function measureUtf8Bytes(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) {
+      bytes += 1;
+    } else if (code < 0x800) {
+      bytes += 2;
+    } else if (code >= 0xd800 && code <= 0xdbff) {
+      if (i + 1 < text.length) {
+        const next = text.charCodeAt(i + 1);
+        if (next >= 0xdc00 && next <= 0xdfff) {
+          bytes += 4;
+          i += 1;
+          continue;
+        }
+      }
+      // Niesparowany surogat kodowany przez TextEncoder jako U+FFFD (3 bajty)
+      bytes += 3;
+    } else {
+      bytes += 3;
+    }
+  }
+  return bytes;
+}
 
 export const VALIDATION_LIMITS = {
   maxIdLength: 160,

@@ -9,7 +9,7 @@ export interface LegalDocumentSection {
 export const LICENSE_META = {
   title: 'Licencja użytkowania oprogramowania',
   subtitle: 'Wolna Licencja Domowo-Edukacyjna (Zastrzeżona) — WLDE',
-  projectLabel: 'Teczka Wsparcia (wersja 1.6.1 i wyższe)',
+  projectLabel: 'Teczka Wsparcia (wersja 1.6.2 i wyższe)',
   author: 'mgr Krzysztof Jureczek',
   copyright: 'Copyright © 2026 Krzysztof Jureczek. Wszelkie prawa zastrzeżone.',
   contactEmail: 'kjureczek@proton.me',
@@ -97,7 +97,7 @@ export const LICENSE_SECTIONS: LegalDocumentSection[] = [
 
 export const TERMS_META = {
   title: 'Regulamin i Polityka Prywatności aplikacji „Teczka Wsparcia”',
-  versionLabel: 'Wersja 1.6.1 · obowiązuje od 23 listopada 2026 r.',
+  versionLabel: 'Wersja 1.6.2 · obowiązuje od 24 listopada 2026 r.',
   appUrlLabel: 'https://krzjur-oss.github.io/TW/ (oraz lokalna aplikacja PWA)',
   author: 'mgr Krzysztof Jureczek',
   contactEmail: 'kjureczek@proton.me',

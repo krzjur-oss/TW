@@ -1,6 +1,6 @@
 # Regulamin i Polityka Prywatności aplikacji „Teczka Wsparcia”
 
-**Wersja 1.6.1 · obowiązuje od 23 listopada 2026 r.**
+**Wersja 1.6.2 · obowiązuje od 24 listopada 2026 r.**
 
 ---
 

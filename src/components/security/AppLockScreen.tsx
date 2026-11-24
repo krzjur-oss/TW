@@ -10,16 +10,39 @@ import {
   resetLockThrottleState,
   type AppLockThrottleState,
 } from '../../utils/appLockThrottle';
+import type { AutoLockReason } from '../../utils/autoLockController';
 
 interface AppLockScreenProps {
   schoolName: string;
   lockConfig: AppLockConfig;
+  lockReason?: AutoLockReason | null;
   onUnlock: () => void;
+}
+
+function formatLockReasonBanner(
+  reason: AutoLockReason | null | undefined,
+  autoLockMinutes?: number,
+): string | null {
+  switch (reason) {
+    case 'IDLE_TIMEOUT':
+      return autoLockMinutes && autoLockMinutes > 0
+        ? `Automatyczna blokada po ${autoLockMinutes} min bezczynności. Niezapisane dane formularza zostały zachowane do czasu odblokowania.`
+        : 'Automatyczna blokada po czasie bezczynności.';
+    case 'BACKGROUND':
+      return 'Automatyczna blokada po przejściu karty lub aplikacji w tło.';
+    case 'BACKGROUND_IDLE_ELAPSED':
+      return 'Upłynął ustawiony czas bezczynności podczas nieobecności lub uśpienia urządzenia — aplikacja została zablokowana.';
+    case 'MANUAL':
+      return 'Aplikacja została zablokowana ręcznie przez użytkownika.';
+    default:
+      return null;
+  }
 }
 
 export const AppLockScreen: React.FC<AppLockScreenProps> = ({
   schoolName,
   lockConfig,
+  lockReason,
   onUnlock,
 }) => {
   const [secret, setSecret] = useState('');
@@ -122,6 +145,12 @@ export const AppLockScreen: React.FC<AppLockScreenProps> = ({
             <span className="font-mono tabular-nums">v{APP_INFO.version}</span>
           </p>
         </div>
+
+        {formatLockReasonBanner(lockReason, lockConfig.autoLockMinutes) && (
+          <div className="rounded-lg border border-blue-200 bg-blue-50/80 px-3.5 py-2.5 text-xs leading-relaxed text-blue-950 dark:border-blue-800/70 dark:bg-blue-950/30 dark:text-blue-100">
+            {formatLockReasonBanner(lockReason, lockConfig.autoLockMinutes)}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>

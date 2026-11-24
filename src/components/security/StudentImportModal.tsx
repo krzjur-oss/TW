@@ -25,7 +25,11 @@ import {
   type StudentMergeDuplicatePolicy,
 } from '../../db/database';
 import { DOCUMENT_TYPE_LABELS, type StudentProfile } from '../../types/domain';
-import { MAX_ARCHIVE_BYTES } from '../../validation/bundleValidation';
+import {
+  MAX_ARCHIVE_BYTES,
+  MAX_ARCHIVE_MB,
+  MAX_DECRYPTED_MB,
+} from '../../validation/bundleValidation';
 
 interface StudentImportModalProps {
   open: boolean;
@@ -93,7 +97,9 @@ export const StudentImportModal: React.FC<StudentImportModalProps> = ({
     }
 
     if (file.size > MAX_ARCHIVE_BYTES) {
-      setError('Plik przekracza maksymalny bezpieczny rozmiar (25 MB).');
+      setError(
+        `Plik przekracza maksymalny bezpieczny rozmiar archiwum (${MAX_ARCHIVE_MB} MB; dane jawne do ${MAX_DECRYPTED_MB} MB).`,
+      );
       return;
     }
 

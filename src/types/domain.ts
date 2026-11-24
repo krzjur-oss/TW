@@ -212,12 +212,18 @@ export interface ProgramModificationAnnex {
 
 export type AppLockMode = 'PIN' | 'PASSWORD';
 
+export type AutoLockMinutes = 0 | 1 | 5 | 10 | 15;
+
+export type BackgroundLockPolicy = 'OFF' | 'RESPECT_IDLE' | 'IMMEDIATE';
+
 export interface AppLockConfig {
   enabled: boolean;
   mode: AppLockMode;
   salt: string;
   hash: string;
   iterations: number;
+  autoLockMinutes?: AutoLockMinutes;
+  backgroundLockPolicy?: BackgroundLockPolicy;
   updatedAt: string;
 }
 

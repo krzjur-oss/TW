@@ -1,6 +1,6 @@
 import type { StorageLike } from './appLockThrottle';
 
-export const TERMS_ACCEPTANCE_VERSION = '1.6.1';
+export const TERMS_ACCEPTANCE_VERSION = '1.6.2';
 export const TERMS_ACCEPTANCE_STORAGE_KEY =
   'teczka_wsparcia_terms_acceptance_v1';
 

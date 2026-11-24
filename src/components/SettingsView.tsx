@@ -22,6 +22,8 @@ import type { DatabaseStats } from '../db/database';
 import {
   SCHOOL_TYPE_OPTIONS,
   type AppLockMode,
+  type AutoLockMinutes,
+  type BackgroundLockPolicy,
   type FacilitySettings,
   type ThemeMode,
 } from '../types/domain';
@@ -31,6 +33,11 @@ import {
   recordFailedLockAttempt,
   resetLockThrottleState,
 } from '../utils/appLockThrottle';
+import {
+  AUTO_LOCK_MINUTE_OPTIONS,
+  BACKGROUND_LOCK_POLICY_OPTIONS,
+  resolveEffectiveAutoLockConfig,
+} from '../utils/autoLockController';
 import { PWAInstallButton } from './PWAInstallButton';
 import { TestDataStamp } from './TestDataStamp';
 import { EncryptedExportModal } from './security/EncryptedExportModal';
@@ -83,6 +90,18 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [lockMode, setLockMode] = useState<AppLockMode>(
     settings.appLock?.mode ?? 'PIN',
   );
+  const initialEffectiveAutoLock = resolveEffectiveAutoLockConfig(
+    settings.appLock,
+  );
+  const [autoLockMinutes, setAutoLockMinutes] = useState<AutoLockMinutes>(
+    settings.appLock?.enabled ? initialEffectiveAutoLock.autoLockMinutes : 5,
+  );
+  const [backgroundLockPolicy, setBackgroundLockPolicy] =
+    useState<BackgroundLockPolicy>(
+      settings.appLock?.enabled
+        ? initialEffectiveAutoLock.backgroundLockPolicy
+        : 'RESPECT_IDLE',
+    );
   const [currentSecret, setCurrentSecret] = useState('');
   const [newSecret, setNewSecret] = useState('');
   const [confirmSecret, setConfirmSecret] = useState('');
@@ -101,7 +120,21 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     if (settings.appLock?.mode) {
       setLockMode(settings.appLock.mode);
     }
+    if (settings.appLock?.enabled) {
+      const resolved = resolveEffectiveAutoLockConfig(settings.appLock);
+      setAutoLockMinutes(resolved.autoLockMinutes);
+      setBackgroundLockPolicy(resolved.backgroundLockPolicy);
+    } else {
+      setAutoLockMinutes(5);
+      setBackgroundLockPolicy('RESPECT_IDLE');
+    }
   }, [settings]);
+
+  const savedAutoLock = resolveEffectiveAutoLockConfig(settings.appLock);
+  const hasAutoLockTimingChanges =
+    Boolean(settings.appLock?.enabled) &&
+    (autoLockMinutes !== savedAutoLock.autoLockMinutes ||
+      backgroundLockPolicy !== savedAutoLock.backgroundLockPolicy);
 
   const hasUnsavedSettings =
     schoolName !== settings.schoolName ||
@@ -111,6 +144,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     directorName !== settings.directorName ||
     defaultSchoolYear !== settings.defaultSchoolYear ||
     defaultTeamRole !== settings.defaultTeamRole ||
+    hasAutoLockTimingChanges ||
     currentSecret !== '' ||
     newSecret !== '' ||
     confirmSecret !== '';
@@ -209,7 +243,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
     setLockBusy(true);
     try {
-      const nextLock = await createAppLockConfig(lockMode, newSecret);
+      const nextLock = await createAppLockConfig(lockMode, newSecret, {
+        autoLockMinutes,
+        backgroundLockPolicy,
+      });
       await onSaveSettings({ appLock: nextLock });
       resetLockThrottleState();
       setCurrentSecret('');
@@ -217,12 +254,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
       setConfirmSecret('');
       setLockSuccess(
         lockEnabled
-          ? 'Zaktualizowano lokalną blokadę interfejsu aplikacji.'
+          ? 'Zaktualizowano lokalną blokadę interfejsu i czas automatycznej blokady.'
           : 'Włączono lokalną blokadę ekranu interfejsu aplikacji.',
       );
     } catch (err) {
       setLockError(
         err instanceof Error ? err.message : 'Nie udało się zapisać blokady.',
+      );
+    } finally {
+      setLockBusy(false);
+    }
+  };
+
+  const handleSaveAutoLockTiming = async () => {
+    if (!settings.appLock?.enabled) return;
+    setLockError(null);
+    setLockSuccess(null);
+    setLockBusy(true);
+    try {
+      await onSaveSettings({
+        appLock: {
+          ...settings.appLock,
+          autoLockMinutes,
+          backgroundLockPolicy,
+          updatedAt: new Date().toISOString(),
+        },
+      });
+      setLockSuccess(
+        autoLockMinutes === 0 && backgroundLockPolicy !== 'IMMEDIATE'
+          ? 'Zapisano ustawienia: automatyczna blokada po bezczynności jest wyłączona (pozostaje blokada ręczna i przy starcie).'
+          : 'Zapisano ustawienia automatycznej blokady interfejsu.',
+      );
+    } catch (err) {
+      setLockError(
+        err instanceof Error
+          ? err.message
+          : 'Nie udało się zapisać czasu automatycznej blokady.',
       );
     } finally {
       setLockBusy(false);
@@ -604,6 +671,93 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 font-mono text-sm text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
                 />
               </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-200 bg-slate-50/80 p-4 dark:border-slate-800 dark:bg-slate-950/50 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100">
+                    Automatyczna blokada po bezczynności i w tle
+                  </h4>
+                  <p className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
+                    Aktywne pisanie i klikanie w formularzach resetuje licznik; zablokowanie ukrywa widok bez kasowania niezapisanych danych.
+                  </p>
+                </div>
+                {lockEnabled && (
+                  <button
+                    type="button"
+                    disabled={lockBusy || !hasAutoLockTimingChanges}
+                    onClick={handleSaveAutoLockTiming}
+                    className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-semibold text-blue-900 transition-colors hover:bg-blue-100 disabled:opacity-50 dark:border-blue-800 dark:bg-blue-950/50 dark:text-blue-200 dark:hover:bg-blue-900/50 whitespace-nowrap shrink-0"
+                  >
+                    Zapisz czas auto-blokady
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label
+                    htmlFor="auto-lock-minutes"
+                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                  >
+                    Czas bezczynności
+                  </label>
+                  <select
+                    id="auto-lock-minutes"
+                    value={autoLockMinutes}
+                    onChange={(e) => {
+                      setAutoLockMinutes(
+                        Number(e.target.value) as AutoLockMinutes,
+                      );
+                      setLockError(null);
+                      setLockSuccess(null);
+                    }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    {AUTO_LOCK_MINUTE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="background-lock-policy"
+                    className="block text-xs font-medium text-slate-700 dark:text-slate-300 mb-1"
+                  >
+                    Zachowanie po przejściu do tła
+                  </label>
+                  <select
+                    id="background-lock-policy"
+                    value={backgroundLockPolicy}
+                    onChange={(e) => {
+                      setBackgroundLockPolicy(
+                        e.target.value as BackgroundLockPolicy,
+                      );
+                      setLockError(null);
+                      setLockSuccess(null);
+                    }}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs text-slate-900 focus:border-blue-600 focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    {BACKGROUND_LOCK_POLICY_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <p className="text-[11px] leading-relaxed text-slate-600 dark:text-slate-400">
+                {
+                  BACKGROUND_LOCK_POLICY_OPTIONS.find(
+                    (opt) => opt.value === backgroundLockPolicy,
+                  )?.description
+                }
+              </p>
             </div>
 
             {lockError && (

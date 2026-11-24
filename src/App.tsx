@@ -49,6 +49,11 @@ import { StudentImportModal } from './components/security/StudentImportModal';
 import { TermsAcceptanceGate } from './components/legal/TermsAcceptanceGate';
 import { APP_INFO } from './config/appInfo';
 import type { FacilitySettings, StudentProfile } from './types/domain';
+import {
+  createAutoLockController,
+  resolveEffectiveAutoLockConfig,
+  type AutoLockReason,
+} from './utils/autoLockController';
 import { hasAcceptedCurrentTerms } from './utils/termsAcceptance';
 import { UnsavedChangesWindowGuard } from './utils/unsavedChangesRegistry';
 
@@ -79,6 +84,7 @@ function AppShell() {
   );
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [lockReason, setLockReason] = useState<AutoLockReason | null>(null);
   const [termsAccepted, setTermsAccepted] = useState<boolean>(() =>
     hasAcceptedCurrentTerms(),
   );
@@ -148,6 +154,35 @@ function AppShell() {
       active = false;
     };
   }, [refreshData]);
+
+  const effectiveAutoLock = resolveEffectiveAutoLockConfig(settings.appLock);
+
+  useEffect(() => {
+    if (!termsAccepted || !effectiveAutoLock.enabled || !isUnlocked) {
+      return;
+    }
+
+    const controller = createAutoLockController({
+      enabled: true,
+      autoLockMinutes: effectiveAutoLock.autoLockMinutes,
+      backgroundLockPolicy: effectiveAutoLock.backgroundLockPolicy,
+      onLock: (reason) => {
+        setMobileMenuOpen(false);
+        setLockReason(reason);
+        setIsUnlocked(false);
+      },
+    });
+
+    return () => {
+      controller.destroy();
+    };
+  }, [
+    termsAccepted,
+    effectiveAutoLock.enabled,
+    effectiveAutoLock.autoLockMinutes,
+    effectiveAutoLock.backgroundLockPolicy,
+    isUnlocked,
+  ]);
 
   const handleSaveStudent = async (student: StudentProfile) => {
     await saveStudent(student);
@@ -220,6 +255,7 @@ function AppShell() {
 
   const handleLockNow = () => {
     setMobileMenuOpen(false);
+    setLockReason('MANUAL');
     setIsUnlocked(false);
   };
 
@@ -228,19 +264,6 @@ function AppShell() {
       <div className="min-h-screen flex items-center justify-center bg-slate-50 text-slate-600 dark:bg-slate-950 dark:text-slate-300 text-sm">
         Wczytywanie lokalnej bazy danych...
       </div>
-    );
-  }
-
-  if (settings.appLock?.enabled && !isUnlocked) {
-    return (
-      <>
-        <AppLockScreen
-          schoolName={settings.schoolName}
-          lockConfig={settings.appLock}
-          onUnlock={() => setIsUnlocked(true)}
-        />
-        <OfflineIndicator />
-      </>
     );
   }
 
@@ -253,8 +276,33 @@ function AppShell() {
     );
   }
 
+  const isLocked = Boolean(settings.appLock?.enabled && !isUnlocked);
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex">
+    <>
+      {isLocked && settings.appLock && (
+        <>
+          <AppLockScreen
+            schoolName={settings.schoolName}
+            lockConfig={settings.appLock}
+            lockReason={lockReason}
+            onUnlock={() => {
+              setLockReason(null);
+              setIsUnlocked(true);
+            }}
+          />
+          <OfflineIndicator />
+        </>
+      )}
+
+      <div
+        className={
+          isLocked
+            ? 'hidden print:hidden'
+            : 'min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 flex'
+        }
+        aria-hidden={isLocked || undefined}
+      >
       {/* Pasek boczny desktop */}
       <aside className="print:hidden hidden lg:flex lg:w-64 lg:flex-col lg:fixed lg:inset-y-0 border-r border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
         <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-5 dark:border-slate-800">
@@ -630,7 +678,8 @@ function AppShell() {
 
       <PWAUpdateBanner />
       <OfflineIndicator />
-    </div>
+      </div>
+    </>
   );
 }
 
