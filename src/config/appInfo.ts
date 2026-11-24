@@ -4,7 +4,7 @@ export const LEGAL_FRAMEWORK_AS_OF_PL = '23 listopada 2026 r.';
 export const APP_INFO = {
   name: 'Teczka Wsparcia',
   shortName: 'TeczkaIPET',
-  version: '1.6.0',
+  version: '1.6.1',
   editionLabel: 'Local-First PWA · Offline-First',
   legalStateDateIso: LEGAL_FRAMEWORK_AS_OF_ISO,
   legalStateDateLabel: LEGAL_FRAMEWORK_AS_OF_PL,
@@ -51,6 +51,18 @@ export interface ChangelogEntry {
 }
 
 export const APP_CHANGELOG: ChangelogEntry[] = [
+  {
+    version: '1.6.1',
+    dateLabel: '23 listopada 2026 r.',
+    title: 'Licencja edukacyjna (WLDE) oraz obowiązkowa akceptacja regulaminu przed uruchomieniem',
+    summary:
+      'Dostosowanie Wolnej Licencji Domowo-Edukacyjnej (WLDE) i Regulaminu z Polityką Prywatności do programu oraz wdrożenie ekranu obowiązkowego zapoznania się i akceptacji przed pierwszym uruchomieniem.',
+    highlights: [
+      'Dodano dostosowane dokumenty LICENSE.md i REGULAMIN.md dla darmowego użytku edukacyjnego w placówkach oświatowych oraz dla nauczycieli, pedagogów i specjalistów szkolnych.',
+      'Wdrożono obowiązkowy ekran przeczytania i akceptacji Regulaminu oraz Licencji WLDE przed pierwszym uruchomieniem aplikacji (z zapisem wyłącznie lokalnie).',
+      'Udostępniono pełny podgląd Licencji WLDE, Regulaminu oraz statusu akceptacji w zakładce „O programie i prawo”, a także interaktywną historię zmian (2 najnowsze wpisy rozwinięte domyślnie).',
+    ],
+  },
   {
     version: '1.6.0',
     dateLabel: '23 listopada 2026 r.',

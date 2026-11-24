@@ -5,6 +5,8 @@ import {
   ChevronDown,
   ChevronUp,
   ExternalLink,
+  FileText,
+  GraduationCap,
   History,
   Info,
   Scale,
@@ -16,11 +18,20 @@ import {
   POLISH_LEGAL_FRAMEWORK,
   PROGRAM_FEATURES,
 } from '../config/appInfo';
+import { LICENSE_META } from '../config/legalDocuments';
+import { readTermsAcceptance } from '../utils/termsAcceptance';
+import {
+  LicenseAndTermsContent,
+  type LegalDocTab,
+} from './legal/LicenseAndTermsReader';
 
 export const AboutAndLegalView: React.FC = () => {
   const [expandedVersions, setExpandedVersions] = useState<Set<string>>(
     () => new Set(APP_CHANGELOG.slice(0, 2).map((entry) => entry.version)),
   );
+  const [legalDocTab, setLegalDocTab] = useState<LegalDocTab>('LICENSE');
+  const [showFullLicenseAndTerms, setShowFullLicenseAndTerms] = useState(false);
+  const acceptanceRecord = readTermsAcceptance();
 
   const olderVersions = APP_CHANGELOG.slice(2);
   const allOlderExpanded =
@@ -237,6 +248,109 @@ export const AboutAndLegalView: React.FC = () => {
             );
           })}
         </div>
+      </section>
+
+      {/* Licencja WLDE i Regulamin użytkowania */}
+      <section className="rounded-xl border border-slate-200 bg-white p-6 dark:border-slate-800 dark:bg-slate-900 space-y-4">
+        <div className="flex flex-col gap-3 border-b border-slate-100 pb-4 sm:flex-row sm:items-start sm:justify-between dark:border-slate-800">
+          <div className="flex items-start gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300 shrink-0">
+              <GraduationCap className="h-4 w-4" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+                Licencja edukacyjna (WLDE) i Regulamin programu
+              </h2>
+              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                {LICENSE_META.subtitle} · Autor:{' '}
+                <strong>{LICENSE_META.author}</strong> ({LICENSE_META.contactEmail})
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setShowFullLicenseAndTerms((prev) => !prev)}
+            aria-expanded={showFullLicenseAndTerms}
+            className="inline-flex items-center gap-1.5 self-start sm:self-auto rounded-lg border border-slate-300 bg-slate-50 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700 cursor-pointer shrink-0"
+          >
+            {showFullLicenseAndTerms ? (
+              <>
+                <ChevronUp className="h-3.5 w-3.5" />
+                <span>Zwiń pełną treść</span>
+              </>
+            ) : (
+              <>
+                <ChevronDown className="h-3.5 w-3.5" />
+                <span>Pokaż pełną treść licencji i regulaminu</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3.5 text-xs leading-relaxed text-emerald-950 dark:border-emerald-800/70 dark:bg-emerald-950/30 dark:text-emerald-100">
+            <div className="font-semibold">Bezpłatny użytek edukacyjny i domowy</div>
+            <p className="mt-1 text-[11px]">
+              Program jest bezpłatny dla placówek edukacyjnych (szkół, przedszkoli, poradni, ośrodków terapeutycznych), nauczycieli, pedagogów i specjalistów oraz do użytku prywatnego — z zakazem komercjalizacji, modyfikacji i rozpowszechniania kodu bez zgody Autora.
+            </p>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-slate-50/70 p-3.5 text-xs leading-relaxed text-slate-700 dark:border-slate-800 dark:bg-slate-950/50 dark:text-slate-300">
+            <div className="font-semibold text-slate-900 dark:text-slate-100">
+              Status akceptacji regulaminu
+            </div>
+            {acceptanceRecord ? (
+              <p className="mt-1 text-[11px]">
+                Zaakceptowano wersję{' '}
+                <span className="font-mono font-semibold">
+                  v{acceptanceRecord.termsVersion}
+                </span>{' '}
+                dnia{' '}
+                <span className="font-mono">
+                  {new Date(acceptanceRecord.acceptedAt).toLocaleString('pl-PL')}
+                </span>{' '}
+                (zapis lokalny na tym urządzeniu).
+              </p>
+            ) : (
+              <p className="mt-1 text-[11px]">
+                Brak zapisanej akceptacji regulaminu w pamięci przeglądarki.
+              </p>
+            )}
+          </div>
+        </div>
+
+        {showFullLicenseAndTerms && (
+          <div className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5 dark:border-slate-800 dark:bg-slate-950/50 space-y-4">
+            <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => setLegalDocTab('LICENSE')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                  legalDocTab === 'LICENSE'
+                    ? 'bg-blue-800 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                <Scale className="h-3.5 w-3.5" />
+                <span>Licencja WLDE</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setLegalDocTab('TERMS')}
+                className={`inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors cursor-pointer ${
+                  legalDocTab === 'TERMS'
+                    ? 'bg-blue-800 text-white'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700'
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                <span>Regulamin i Polityka Prywatności</span>
+              </button>
+            </div>
+
+            <LicenseAndTermsContent activeTab={legalDocTab} />
+          </div>
+        )}
       </section>
 
       {/* Przepisy prawa polskiego */}

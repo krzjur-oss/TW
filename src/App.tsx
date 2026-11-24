@@ -46,8 +46,10 @@ import { StudentFormModal } from './components/StudentFormModal';
 import { StudentListView } from './components/StudentListView';
 import { AppLockScreen } from './components/security/AppLockScreen';
 import { StudentImportModal } from './components/security/StudentImportModal';
+import { TermsAcceptanceGate } from './components/legal/TermsAcceptanceGate';
 import { APP_INFO } from './config/appInfo';
 import type { FacilitySettings, StudentProfile } from './types/domain';
+import { hasAcceptedCurrentTerms } from './utils/termsAcceptance';
 import { UnsavedChangesWindowGuard } from './utils/unsavedChangesRegistry';
 
 function AppShell() {
@@ -77,6 +79,9 @@ function AppShell() {
   );
   const [importModalOpen, setImportModalOpen] = useState(false);
   const [isUnlocked, setIsUnlocked] = useState(false);
+  const [termsAccepted, setTermsAccepted] = useState<boolean>(() =>
+    hasAcceptedCurrentTerms(),
+  );
   const initialLockCheckedRef = useRef(false);
 
   const selectedStudentId = studentMatch?.params.studentId
@@ -234,6 +239,15 @@ function AppShell() {
           lockConfig={settings.appLock}
           onUnlock={() => setIsUnlocked(true)}
         />
+        <OfflineIndicator />
+      </>
+    );
+  }
+
+  if (!termsAccepted) {
+    return (
+      <>
+        <TermsAcceptanceGate onAccepted={() => setTermsAccepted(true)} />
         <OfflineIndicator />
       </>
     );
